@@ -16,7 +16,7 @@ function escapeHtml(s: string): string {
 const EVENT_TITLE = 'A-DNA Global Conference USA 2026';
 
 /**
- * Sends a transactional email after registration is saved (payment still pending → Paystack next).
+ * Sends a transactional email after registration is saved (payment still pending → hosted Zeffy checkout next).
  * No-op when `RESEND_API_KEY` is unset. Logs errors without throwing so registration persists.
  */
 export async function sendRegistrationConfirmationEmail(
@@ -68,7 +68,7 @@ export async function sendRegistrationConfirmationEmail(
       }
     </p>
     <p style="margin:0 0 16px;font-size:15px;"><strong>Tier:</strong> ${escapeHtml(tierLabel)}<br/><strong>Total:</strong> ${escapeHtml(fmtMoney)}</p>
-    <p style="margin:0 0 20px;font-size:15px;"><strong>Next:</strong> complete secure payment via Paystack on the registration page.</p>
+    <p style="margin:0 0 20px;font-size:15px;"><strong>Next:</strong> complete secure payment through Zeffy from the registration page.</p>
     ${resumeUrl ? `<p style="margin:0 0 8px;font-size:14px;"><a href="${escapeHtml(resumeUrl)}">${escapeHtml(resumeUrl)}</a></p>` : ''}
     <p style="margin:24px 0 0;font-size:12px;color:#78716c;">Reference ID: ${escapeHtml(result.registrationId)} · ${escapeHtml(normalizeEmail(to))}</p>
   </div>
@@ -84,7 +84,7 @@ export async function sendRegistrationConfirmationEmail(
       `Tier: ${tierLabel}`,
       `Total due: ${fmtMoney}`,
       '',
-      `Next step: complete payment securely with Paystack on the registration page.`,
+      `Next step: complete payment securely via Zeffy from the registration page.`,
       resumeUrl ? `Return to registration: ${resumeUrl}` : '',
       '',
       `Reference ID: ${result.registrationId}`,

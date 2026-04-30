@@ -81,7 +81,11 @@ export const registrationFormSchema = z
     institution: z.string().trim().min(1, 'Institution / organization is required'),
     department: z.string().trim().optional().or(z.literal('')),
     is_student: z.boolean(),
-    country: z.string().trim().min(1, 'Country is required'),
+    country: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z]{2}$/, 'Country is required')
+      .transform((s) => s.toUpperCase()),
     state_region: z.string().trim().min(1, 'State / province / region is required'),
     city: z.string().trim().min(1, 'City is required'),
     dietary_requirements: z.enum(dietaryOptions),
@@ -216,7 +220,7 @@ export function summarizeForPersistence(values: RegistrationFormValues) {
       institution: values.institution.trim(),
       department: normalizeOptional(values.department),
       is_student: values.is_student,
-      country: values.country.trim(),
+      country: values.country,
       state_region: values.state_region.trim(),
       city: values.city.trim(),
       dietary_requirements: dietary_label,

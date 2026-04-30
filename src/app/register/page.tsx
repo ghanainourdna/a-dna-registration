@@ -3,6 +3,7 @@ import Image from 'next/image';
 
 import { RegistrationForm } from '@/components/registration/registration-form';
 import { REGISTER_PAGE_IMAGES } from '@/lib/event-assets';
+import { fetchCountriesCatalog } from '@/lib/countries/catalog';
 
 export const metadata: Metadata = {
   title: 'Conference Registration · A-DNA Global Conference USA 2026',
@@ -10,7 +11,12 @@ export const metadata: Metadata = {
     'Register for Voices of Change: Translating Innovation into Action for Global Health · August 21–22, 2026, Baltimore.',
 };
 
-export default function RegisterPage() {
+/** Load `countries` on each request; static prerender leaves the catalog empty without build-time secrets. */
+export const dynamic = 'force-dynamic';
+
+export default async function RegisterPage() {
+  const countries = await fetchCountriesCatalog();
+
   return (
     <main className="bg-[#f6f7f9] pb-24">
       {/* Hero */}
@@ -52,8 +58,8 @@ export default function RegisterPage() {
           <div className="w-full shrink-0 rounded-2xl border border-white/20 bg-black/35 px-5 py-4 text-xs text-stone-100 shadow-lg backdrop-blur-md md:max-w-sm">
             <p className="font-semibold text-white">Secure checkout</p>
             <p className="mt-2 leading-relaxed text-stone-200">
-              Payments are processed by Paystack. Your contribution supports evidence-based advocacy and clinician leadership
-              initiatives across diaspora communities worldwide.
+              Payments are processed by Zeffy (no platform fees—donations optionally support Zeffy). Your contribution supports
+              evidence-based advocacy and clinician leadership initiatives across diaspora communities worldwide.
             </p>
             <p className="mt-3 border-t border-white/15 pt-3 leading-relaxed text-stone-300/95">
               A-DNA is a 501(c)(4) nonprofit. Registration and payments are not tax-deductible.
@@ -89,7 +95,7 @@ export default function RegisterPage() {
         </div>
       </section>
 
-      <RegistrationForm />
+      <RegistrationForm countries={countries} />
 
       <footer className="mx-auto max-w-6xl px-4 pb-10 pt-8 text-center text-xs text-stone-500 md:px-6">
         <p className="mx-auto mb-6 max-w-2xl leading-relaxed text-stone-600">

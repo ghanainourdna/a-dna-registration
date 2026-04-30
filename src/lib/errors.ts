@@ -4,3 +4,10 @@ export class DuplicateRegistrationError extends Error {
     this.name = 'DuplicateRegistrationError';
   }
 }
+
+export class InvalidCountryError extends Error {
+  constructor() {
+    super('Country is not recognized. Please select a valid country.');
+    this.name = 'InvalidCountryError';
+  }
+}

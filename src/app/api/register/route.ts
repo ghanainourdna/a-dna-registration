@@ -1,5 +1,5 @@
 import { sendRegistrationConfirmationEmail } from '@/lib/email/send-registration-confirmation';
-import { DuplicateRegistrationError } from '@/lib/errors';
+import { DuplicateRegistrationError, InvalidCountryError } from '@/lib/errors';
 import type { RegistrationTier } from '@/lib/pricing';
 import type { RegistrationFormValues } from '@/lib/schemas/registration';
 import { registrationFormSchema, summarizeForPersistence } from '@/lib/schemas/registration';
@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
     await sendRegistrationConfirmationEmail(parsed.data, result);
     return NextResponse.json(result, { status: result.created ? 201 : 200 });
   } catch (e: unknown) {
+    if (e instanceof InvalidCountryError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
     if (e instanceof DuplicateRegistrationError) {
       return NextResponse.json({ error: e.message }, { status: 409 });
     }
@@ -48,6 +51,12 @@ async function saveRegistration(values: RegistrationFormValues) {
     supabase = getSupabaseAdmin();
   } catch {
     throw new Error('Registration service is unavailable. Missing Supabase environment variables.');
+  }
+
+  const { data: countryRow } = await supabase.from('countries').select('code').eq('code', values.country).maybeSingle();
+
+  if (!countryRow) {
+    throw new InvalidCountryError();
   }
 
   const { data: existing } = await supabase
@@ -93,7 +102,7 @@ async function saveRegistration(values: RegistrationFormValues) {
     housing_amount: payload.housing_amount,
     total_amount: payload.total_amount,
     payment_status: 'pending' as const,
-    paystack_reference: null as string | null,
+    checkout_correlation_reference: null as string | null,
   };
 
   if (row) {

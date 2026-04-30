@@ -1,7 +1,5 @@
-import { centsFromUsd } from '@/lib/pricing';
-import type { OccupancyType, RegistrationTier, RoomTypeCode } from '@/lib/pricing';
+import { centsFromUsd, type OccupancyType, type RegistrationTier, type RoomTypeCode } from '@/lib/pricing';
 import { assertPricingMatches } from '@/lib/schemas/registration';
-import { paystackInitializeTransaction } from '@/lib/paystack';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -38,50 +36,47 @@ export async function POST(req: NextRequest) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const result = await startPayment(body.registrationId, supabase);
+    const checkoutUrl = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim();
+    if (!checkoutUrl) {
+      return NextResponse.json({ error: 'NEXT_PUBLIC_ZEFFY_CHECKOUT_URL is not configured' }, { status: 503 });
+    }
 
+    const result = await prepareCheckout(body.registrationId, supabase);
     let appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
     if (!appUrl && process.env.VERCEL_URL) {
       appUrl = `https://${process.env.VERCEL_URL}`;
     }
-    if (!appUrl) {
-      appUrl = 'http://localhost:3000';
-    }
 
-    const init = await paystackInitializeTransaction({
-      email: result.email,
-      amountUsd: result.totalUsd,
-      reference: result.reference,
-      fullName: result.fullName,
-      phone: result.phone,
-      callbackUrl: `${appUrl}/register/success`,
-      metadata: {
-        registration_id: result.registrationId,
-      },
-    });
+    let redirect = new URL(checkoutUrl);
+    redirect.searchParams.set('registration_id', result.registrationId);
+    redirect.searchParams.set('checkout_reference', result.correlationToken.slice(0, 120));
 
     const { error: refError } = await supabase
       .from('conference_registrations')
-      .update({ paystack_reference: result.reference })
+      .update({ checkout_correlation_reference: result.correlationToken })
       .eq('id', result.registrationId);
 
     if (refError) {
-      return NextResponse.json({ error: 'Could not persist payment reference' }, { status: 500 });
+      return NextResponse.json({ error: 'Could not persist checkout correlation' }, { status: 500 });
+    }
+
+    /** Documented UX: optionally keep `success_return` local for custom Zeffy redirect requests */
+    if (appUrl) {
+      redirect.searchParams.set('success_return_hint', `${appUrl}/register/success`);
     }
 
     return NextResponse.json({
-      authorizationUrl: init.authorization_url,
-      reference: init.reference ?? result.reference,
-      accessCode: init.access_code,
+      authorizationUrl: redirect.toString(),
+      reference: result.correlationToken,
+      registrationId: result.registrationId,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unable to initialize payment';
     const status =
       typeof msg === 'string' &&
-      (
-        msg.includes('Missing PAYSTACK_SECRET_KEY') ||
-          msg.includes('Missing NEXT_PUBLIC_SUPABASE_URL') ||
-          msg.includes('Missing SUPABASE_SERVICE_ROLE_KEY'))
+      (msg.includes('Missing NEXT_PUBLIC_ZEFFY_CHECKOUT_URL') ||
+        msg.includes('Missing NEXT_PUBLIC_SUPABASE_URL') ||
+        msg.includes('Missing SUPABASE_SERVICE_ROLE_KEY'))
         ? 503
         : 400;
 
@@ -89,7 +84,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function startPayment(registrationId: string, supabase: ReturnType<typeof getSupabaseAdmin>) {
+async function prepareCheckout(registrationId: string, supabase: ReturnType<typeof getSupabaseAdmin>) {
   const { data, error } = await supabase
     .from('conference_registrations')
     .select(
@@ -112,19 +107,19 @@ async function startPayment(registrationId: string, supabase: ReturnType<typeof 
     throw new Error('Stored totals do not match current pricing.');
   }
 
-  const totalUsd = typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
+  const totalUsd =
+    typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
+
   if (Number.isNaN(totalUsd) || totalUsd <= 0 || centsFromUsd(totalUsd) <= 0) {
     throw new Error('Invalid total amount.');
   }
 
-  const reference = `ADNA26-${registrationId}-${Date.now()}`.slice(0, 60);
+  const correlationToken = `ADNA26-${registrationId}-${Date.now()}`.slice(0, 200);
 
   return {
     registrationId,
-    reference,
+    correlationToken,
     email: row.email.trim().toLowerCase(),
-    phone: row.phone,
     totalUsd,
-    fullName: `${row.first_name} ${row.last_name}`.trim(),
   };
 }
