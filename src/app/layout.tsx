@@ -24,6 +24,9 @@ export const metadata: Metadata = {
   title: "A-DNA Global Conference USA 2026 · Registration",
   description:
     "African-Diaspora Nursing Alliance — Voices of Change: Translating Innovation into Action for Global Health.",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

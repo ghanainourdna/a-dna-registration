@@ -5,11 +5,16 @@ export type CountryOption = {
   name: string;
 };
 
+/** Deterministic list for Playwright E2E (`E2E_FIXTURE_COUNTRIES=1` on the Next.js server). */
+const E2E_COUNTRY_OPTIONS: CountryOption[] = [
+  { code: 'GH', name: 'Ghana' },
+  { code: 'US', name: 'United States of America' },
+];
+
 /** Client for catalog reads: prefers service role, falls back to anon (needs public/countries SELECT policy). */
 function createCountriesSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   if (!url) return null;
-
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
   const key = serviceKey || anonKey;
@@ -22,6 +27,10 @@ function createCountriesSupabaseClient() {
 
 /** ISO 3166-1 alpha-2 list from `public.countries` (sorted by name). */
 export async function fetchCountriesCatalog(): Promise<CountryOption[]> {
+  if (process.env.E2E_FIXTURE_COUNTRIES === '1') {
+    return E2E_COUNTRY_OPTIONS;
+  }
+
   try {
     const supabase = createCountriesSupabaseClient();
     if (!supabase) {
