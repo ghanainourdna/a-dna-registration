@@ -79,6 +79,9 @@ const SECTIONS = [
   { id: "payment", title: "Payment" },
 ];
 
+/** IntersectionObserver for section ⇄ pill sync fights touch scrolling on phones; enabled from `md` up (Tailwind 768px). */
+const SECTION_IO_MEDIA = "(min-width: 768px)";
+
 function cn(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -247,7 +250,7 @@ function CountryPickerField({
         <div className="mb-2">
           <label
             htmlFor={searchId}
-            className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-stone-500"
+            className="mb-1 block text-sm font-semibold uppercase tracking-wide text-stone-500"
           >
             Filter list
           </label>
@@ -274,9 +277,7 @@ function CountryPickerField({
         value={field.state.value ?? ""}
         onBlur={field.handleBlur}
         onChange={(e) =>
-          field.handleChange(
-            String(e.target.value).trim().toUpperCase(),
-          )
+          field.handleChange(String(e.target.value).trim().toUpperCase())
         }
         disabled={disabled}
         autoComplete="country"
@@ -311,8 +312,8 @@ function FormSelect({
       <select
         {...props}
         className={cn(
-          "relative z-0 min-h-12 w-full cursor-pointer appearance-none rounded-2xl border py-3 pl-4 pr-14 ring-0",
-          "text-[0.9375rem] font-medium leading-snug tracking-tight antialiased text-stone-900",
+          "relative z-0 min-h-11 w-full cursor-pointer appearance-none rounded-2xl border py-2.5 pl-3.5 pr-12 text-sm ring-0",
+          "font-medium leading-snug tracking-tight antialiased text-stone-900",
           "shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_2px_rgba(15,23,42,0.05),0_2px_6px_-2px_rgba(15,23,42,0.06)]",
           "bg-linear-to-b from-white to-stone-50/90 hover:from-white hover:to-stone-100/95 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_4px_12px_-3px_rgba(15,23,42,0.08)]",
           "transition-[border-color,box-shadow,background-color,color] duration-200",
@@ -453,10 +454,10 @@ function HousingRoomRateCard({
   return (
     <div className="overflow-hidden rounded-xl border border-stone-200/85 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.05)] ring-1 ring-black/[0.03]">
       <div className="border-b border-emerald-100/90 bg-gradient-to-br from-emerald-50/95 via-white to-teal-50/30 px-4 py-3.5">
-        <p className="font-sans text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-800/90">
+        <p className="font-sans text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800/90">
           Rate plan
         </p>
-        <p className="mt-1 font-sans text-base font-semibold tracking-tight text-stone-900">
+        <p className="mt-1 font-sans text-sm font-semibold tracking-tight text-stone-900">
           Room Type {code}
         </p>
       </div>
@@ -521,29 +522,45 @@ export function RegistrationForm({
   }, [activeSection, motionUi.reduced]);
 
   useEffect(() => {
-    const elements = SECTIONS.map((s) =>
-      document.getElementById(`section-${s.id}`),
-    ).filter((el): el is HTMLElement => el !== null);
-    if (elements.length === 0) return;
+    let io: IntersectionObserver | null = null;
 
-    const io = new IntersectionObserver(
-      (entries) => {
-        const intersecting = entries.filter((e) => e.isIntersecting);
-        if (intersecting.length === 0) return;
-        const best = intersecting.reduce((a, b) =>
-          a.intersectionRatio >= b.intersectionRatio ? a : b,
-        );
-        const id = best.target.id.replace(/^section-/, "");
-        if (SECTIONS.some((s) => s.id === id)) setActiveSection(id);
-      },
-      {
-        root: null,
-        rootMargin: "-42% 0px -42% 0px",
-        threshold: [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5, 0.65, 0.8, 1],
-      },
-    );
-    elements.forEach((el) => io.observe(el));
-    return () => io.disconnect();
+    const mq = window.matchMedia(SECTION_IO_MEDIA);
+
+    const connectIfWide = () => {
+      io?.disconnect();
+      io = null;
+      if (!mq.matches) return;
+
+      const elements = SECTIONS.map((s) =>
+        document.getElementById(`section-${s.id}`),
+      ).filter((el): el is HTMLElement => el !== null);
+      if (elements.length === 0) return;
+
+      io = new IntersectionObserver(
+        (entries) => {
+          const intersecting = entries.filter((e) => e.isIntersecting);
+          if (intersecting.length === 0) return;
+          const best = intersecting.reduce((a, b) =>
+            a.intersectionRatio >= b.intersectionRatio ? a : b,
+          );
+          const id = best.target.id.replace(/^section-/, "");
+          if (SECTIONS.some((s) => s.id === id)) setActiveSection(id);
+        },
+        {
+          root: null,
+          rootMargin: "-42% 0px -42% 0px",
+          threshold: [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5, 0.65, 0.8, 1],
+        },
+      );
+      elements.forEach((el) => io!.observe(el));
+    };
+
+    connectIfWide();
+    mq.addEventListener("change", connectIfWide);
+    return () => {
+      mq.removeEventListener("change", connectIfWide);
+      io?.disconnect();
+    };
   }, []);
 
   const form = useForm({
@@ -641,15 +658,15 @@ export function RegistrationForm({
   const submitting = status !== "idle";
 
   return (
-    <div className="relative mx-auto grid max-w-6xl gap-8 px-4 pb-24 pt-6 md:px-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-8 md:space-y-10">
+    <div className="relative mx-auto grid w-full min-w-0 max-w-[min(115rem,calc(100%-2rem))] gap-8 px-4 pb-24 pt-6 sm:px-6 md:px-10 lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="min-w-0 space-y-8 md:space-y-10">
         <nav
-          className="sticky top-0 z-20 -mx-4 border-b border-stone-200/80 bg-[#f6f7f9]/95 px-4 pb-4 pt-3 backdrop-blur-md md:-mx-6 md:px-6"
+          className="sticky top-0 z-40 -mx-4 border-b border-stone-200/80 bg-[#f6f7f9]/98 px-4 pb-4 pt-3 shadow-[0_6px_12px_-8px_rgba(15,23,42,0.12)] backdrop-blur-md supports-[backdrop-filter]:bg-[#f6f7f9]/90 sm:-mx-6 sm:px-6 md:-mx-10 md:px-10"
           aria-label="Registration progress and section navigation"
         >
           <div className="mb-3">
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500">
                 Registration
               </p>
               <div className="relative min-h-[2.75rem]">
@@ -708,7 +725,7 @@ export function RegistrationForm({
                   whileTap={motionUi.reduced ? undefined : { scale: 0.985 }}
                   transition={motionUi.micro}
                   className={cn(
-                    "flex min-w-[7.25rem] shrink-0 flex-col gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-colors duration-200",
+                    "flex min-w-[6.5rem] max-w-[9.5rem] shrink-0 flex-col gap-0.5 rounded-xl border px-2 py-2 text-left transition-colors duration-200 sm:min-w-[7.25rem] sm:max-w-none sm:px-2.5",
                     past &&
                       "border-emerald-200/90 bg-emerald-50/80 text-emerald-900 hover:bg-emerald-50",
                     current &&
@@ -720,7 +737,7 @@ export function RegistrationForm({
                 >
                   <span
                     className={cn(
-                      "inline-flex size-6 items-center justify-center rounded-full text-[10px] font-bold transition-colors",
+                      "inline-flex size-7 items-center justify-center rounded-full text-[10px] font-bold transition-colors",
                       past && "bg-emerald-600 text-white",
                       current && "bg-emerald-700 text-white",
                       !past &&
@@ -733,7 +750,7 @@ export function RegistrationForm({
                   </span>
                   <span
                     className={cn(
-                      "line-clamp-2 text-[10px] font-semibold leading-snug",
+                      "line-clamp-2 text-xs font-semibold leading-snug",
                       !current && !past && "opacity-90",
                     )}
                   >
@@ -778,7 +795,7 @@ export function RegistrationForm({
             title="Personal Information"
             subtitle="Tell us how to reach you."
           >
-            <div className="grid gap-4 md:grid-cols-12">
+            <div className="grid min-w-0 gap-4 md:grid-cols-12">
               <div className="md:col-span-4">
                 <Label required>First name</Label>
                 <form.Field
@@ -984,13 +1001,13 @@ export function RegistrationForm({
                 role="status"
               >
                 Country list could not be loaded. Apply the{" "}
-                <code className="rounded bg-stone-100 px-1 py-0.5 text-[0.7rem] text-stone-800">
+                <code className="rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-800">
                   countries
                 </code>{" "}
                 migration in Supabase and refresh this page.
               </p>
             ) : null}
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid min-w-0 gap-4 md:grid-cols-3">
               <div>
                 <Label required>Country</Label>
                 <form.Field
@@ -1227,7 +1244,7 @@ export function RegistrationForm({
               <div className="space-y-6 p-5 md:p-7">
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-stone-100 pb-6">
                   <div className="min-w-0 space-y-3">
-                    <p className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-900">
+                    <p className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-900">
                       Room block
                     </p>
                     <div>
@@ -1604,10 +1621,10 @@ export function RegistrationForm({
             </fieldset>
 
             <div className="mt-8 flex flex-col gap-3 border-t border-stone-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-2 text-sm text-stone-600">
+              <div className="space-y-2 text-xs text-stone-600">
                 <p>You will securely pay via Zeffy in the next step.</p>
                 <p className="text-xs leading-relaxed text-stone-500">
-                  A-DNA is a 501(c)(4) nonprofit. Amounts paid are not
+                  A-DNA is a 501(c)(3) nonprofit. Amounts paid are not
                   tax-deductible.
                 </p>
               </div>
@@ -1615,16 +1632,12 @@ export function RegistrationForm({
                 type="submit"
                 disabled={submitting || !countryListReady}
                 whileHover={
-                  submitting ||
-                  !countryListReady ||
-                  motionUi.reduced
+                  submitting || !countryListReady || motionUi.reduced
                     ? undefined
                     : { scale: 1.02 }
                 }
                 whileTap={
-                  submitting ||
-                  !countryListReady ||
-                  motionUi.reduced
+                  submitting || !countryListReady || motionUi.reduced
                     ? undefined
                     : { scale: 0.98 }
                 }
@@ -1642,7 +1655,7 @@ export function RegistrationForm({
         </form>
       </div>
 
-      <aside className="lg:sticky lg:top-6 lg:self-start">
+      <aside className="min-w-0 w-full max-w-full lg:sticky lg:top-6 lg:max-w-none lg:self-start">
         <form.Subscribe selector={(state) => state.values}>
           {(vals) => {
             const t = totalsFor(vals as RegistrationFormValues);
@@ -1664,11 +1677,13 @@ export function RegistrationForm({
                     Summary
                   </p>
                   <div className="mt-4 space-y-3 text-sm text-stone-800">
-                    <div className="flex justify-between gap-3">
-                      <span>Conference registration</span>
+                    <div className="flex min-w-0 justify-between gap-3">
+                      <span className="min-w-0 shrink pr-2 leading-snug">
+                        Conference registration
+                      </span>
                       <SummaryUsd
                         amount={t.registrationAmount}
-                        className="font-semibold"
+                        className="shrink-0 font-semibold tabular-nums"
                       />
                     </div>
                     <AnimatePresence initial={false}>
@@ -1680,32 +1695,34 @@ export function RegistrationForm({
                           animate={{ opacity: 1 }}
                           exit={motionUi.reduced ? undefined : { opacity: 0 }}
                           transition={motionUi.fade}
-                          className="flex justify-between gap-3 border-t border-dashed border-stone-200 pt-3"
+                          className="flex min-w-0 justify-between gap-3 border-t border-dashed border-stone-200 pt-3"
                         >
-                          <span>{housingLine}</span>
+                          <span className="min-w-0 shrink truncate pr-2 text-left">
+                            {housingLine}
+                          </span>
                           <SummaryUsd
                             amount={t.housingAmount}
-                            className="font-semibold"
+                            className="shrink-0 font-semibold tabular-nums"
                           />
                         </motion.div>
                       ) : null}
                     </AnimatePresence>
                     <motion.div
                       layout
-                      className="flex justify-between gap-3 border-t border-stone-200 pt-3 text-base font-semibold text-emerald-900"
+                      className="flex min-w-0 justify-between gap-3 border-t border-stone-200 pt-3 text-sm font-semibold tabular-nums text-emerald-900"
                     >
-                      <span>Total due</span>
-                      <span>
+                      <span className="min-w-0 shrink">Total due</span>
+                      <span className="shrink-0 text-right">
                         <SummaryUsd amount={t.totalAmount} suffix=" USD" />
                       </span>
                     </motion.div>
                   </div>
-                  <p className="mt-4 text-[11px] leading-relaxed text-stone-500">
+                  <p className="mt-4 text-xs leading-relaxed text-stone-500">
                     Totals reflect current published rates for August 2026.
                     Charges are finalized on your Zeffy receipt.
                   </p>
-                  <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
-                    A-DNA is a 501(c)(4) nonprofit; payments are not
+                  <p className="mt-2 text-xs leading-relaxed text-stone-500">
+                    A-DNA is a 501(c)(3) nonprofit; payments are not
                     tax-deductible.
                   </p>
                 </motion.div>
@@ -1722,17 +1739,17 @@ export function RegistrationForm({
         </div>
       </aside>
 
-      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-stone-200 bg-white/95 p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] backdrop-blur lg:hidden">
+      <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-stone-200 bg-white/95 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom,0px))] shadow-[0_-8px_24px_rgba(0,0,0,0.06)] backdrop-blur lg:hidden">
         <form.Subscribe selector={(state) => state.values}>
           {(vals) => {
             const t = totalsFor(vals as RegistrationFormValues);
             return (
-              <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-2">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-stone-500">
+              <div className="mx-auto flex min-w-0 w-full max-w-[min(115rem,100%)] items-center justify-between gap-2 sm:gap-4 md:gap-6">
+                <div className="min-w-0 pr-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
                     Total
                   </p>
-                  <p className="text-lg font-semibold text-emerald-900">
+                  <p className="truncate text-lg font-semibold tabular-nums tracking-tight text-emerald-900">
                     <SummaryUsd amount={t.totalAmount} />
                   </p>
                 </div>
@@ -1740,16 +1757,12 @@ export function RegistrationForm({
                   type="button"
                   disabled={submitting || !countryListReady}
                   whileHover={
-                    submitting ||
-                    !countryListReady ||
-                    motionUi.reduced
+                    submitting || !countryListReady || motionUi.reduced
                       ? undefined
                       : { scale: 1.03 }
                   }
                   whileTap={
-                    submitting ||
-                    !countryListReady ||
-                    motionUi.reduced
+                    submitting || !countryListReady || motionUi.reduced
                       ? undefined
                       : { scale: 0.97 }
                   }
@@ -1767,7 +1780,7 @@ export function RegistrationForm({
                       }
                     }, 400);
                   }}
-                  className="min-h-11 shrink-0 rounded-full bg-emerald-700 px-5 text-sm font-semibold text-white shadow-sm transition-colors disabled:opacity-60"
+                  className="min-h-11 shrink-0 rounded-full bg-emerald-700 px-3.5 text-sm font-semibold text-white shadow-sm transition-colors disabled:opacity-60 sm:px-5"
                 >
                   Register &amp; Pay
                 </motion.button>
@@ -1794,25 +1807,25 @@ function Section({
   return (
     <section id={`section-${id}`} className="scroll-mt-36">
       <div className="relative overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.08)] ring-1 ring-stone-950/[0.03] md:rounded-[1.35rem]">
-        <div className="flex h-2 shrink-0" aria-hidden role="presentation">
+        <div className="flex h-2.5 shrink-0" aria-hidden role="presentation">
           <span className="flex-1 bg-red-800" />
           <span className="flex-1 bg-yellow-400" />
           <span className="flex-1 bg-emerald-900" />
         </div>
         <div className="p-6 md:p-8">
-          <header className="border-b border-stone-100/90 pb-5">
-            <div className="min-w-0 space-y-2">
+          <header className="border-b border-stone-100/90 pb-5 md:pb-6">
+            <div className="min-w-0 space-y-1.5">
               <h2 className="font-sans text-lg font-semibold leading-snug tracking-tight text-stone-900 md:text-xl">
                 {title}
               </h2>
               {subtitle ? (
-                <p className="max-w-[52ch] text-sm leading-relaxed text-stone-500">
+                <p className="max-w-[62ch] text-sm leading-relaxed text-stone-500">
                   {subtitle}
                 </p>
               ) : null}
             </div>
           </header>
-          <div className="pt-6 md:pt-7">{children}</div>
+          <div className="pt-6 md:pt-8">{children}</div>
         </div>
       </div>
     </section>

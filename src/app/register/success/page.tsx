@@ -197,9 +197,9 @@ function SuccessContent() {
 
   return (
     <div className="mx-auto mt-14 max-w-lg rounded-2xl border border-stone-200 bg-white px-8 py-10 shadow-sm">
-      <h1 className="font-heading text-3xl font-medium leading-snug tracking-tight text-stone-900">Registration status</h1>
+      <h1 className="font-sans text-xl font-semibold leading-snug tracking-tight text-stone-900 sm:text-2xl">Registration status</h1>
       {registrationIdDisplay ? (
-        <p className="mt-2 break-all text-[11px] text-stone-500">Registration ID · {registrationIdDisplay}</p>
+        <p className="mt-2 break-all text-xs text-stone-500">Registration ID · {registrationIdDisplay}</p>
       ) : null}
       <div className="mt-6">{body}</div>
       <div className="mt-8 flex flex-wrap gap-3">
