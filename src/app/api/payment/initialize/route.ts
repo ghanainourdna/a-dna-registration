@@ -1,6 +1,7 @@
 import { centsFromUsd, type OccupancyType, type RegistrationTier, type RoomTypeCode } from '@/lib/pricing';
 import { assertPricingMatches } from '@/lib/schemas/registration';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
+import { zeffyCheckoutUrlForTier } from '@/lib/zeffy-checkout-urls';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -36,18 +37,18 @@ export async function POST(req: NextRequest) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const checkoutUrl = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim();
-    if (!checkoutUrl) {
+    const fallbackCheckout = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim();
+    if (!fallbackCheckout) {
       return NextResponse.json({ error: 'NEXT_PUBLIC_ZEFFY_CHECKOUT_URL is not configured' }, { status: 503 });
     }
 
-    const result = await prepareCheckout(body.registrationId, supabase);
+    const result = await prepareCheckout(body.registrationId, supabase, fallbackCheckout);
     let appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
     if (!appUrl && process.env.VERCEL_URL) {
       appUrl = `https://${process.env.VERCEL_URL}`;
     }
 
-    let redirect = new URL(checkoutUrl);
+    const redirect = new URL(result.checkoutBaseUrl);
     redirect.searchParams.set('registration_id', result.registrationId);
     redirect.searchParams.set('checkout_reference', result.correlationToken.slice(0, 120));
 
@@ -84,7 +85,26 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function prepareCheckout(registrationId: string, supabase: ReturnType<typeof getSupabaseAdmin>) {
+function resolveCheckoutBaseUrl(row: DbRow, fallbackCampaignUrl: string): string {
+  const housingUsd =
+    typeof row.housing_amount === 'string' ? Number.parseFloat(row.housing_amount) : row.housing_amount;
+  const hasHousingCharge =
+    row.needs_housing && Number.isFinite(housingUsd) && housingUsd > 0;
+
+  /** Single-ticket Zeffy links rarely include housing add-on; use full campaign URL. */
+  if (hasHousingCharge) {
+    return fallbackCampaignUrl;
+  }
+
+  const tierUrl = zeffyCheckoutUrlForTier(row.registration_type);
+  return tierUrl ?? fallbackCampaignUrl;
+}
+
+async function prepareCheckout(
+  registrationId: string,
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  fallbackCampaignUrl: string,
+) {
   const { data, error } = await supabase
     .from('conference_registrations')
     .select(
@@ -116,10 +136,13 @@ async function prepareCheckout(registrationId: string, supabase: ReturnType<type
 
   const correlationToken = `ADNA26-${registrationId}-${Date.now()}`.slice(0, 200);
 
+  const checkoutBaseUrl = resolveCheckoutBaseUrl(row, fallbackCampaignUrl);
+
   return {
     registrationId,
     correlationToken,
     email: row.email.trim().toLowerCase(),
     totalUsd,
+    checkoutBaseUrl,
   };
 }

@@ -13,8 +13,16 @@ export function useUiMotion() {
     reduced,
     /** Transitions for opacity / cross-fade */
     fade: reduced ? { duration: 0 } : { duration: UI_MS / 1000, ease: [0.25, 0.1, 0.25, 1] as const },
-    /** Width / progress */
-    bar: reduced ? { duration: 0 } : { duration: 0.26, ease: 'easeOut' as const },
+    /** Width / progress — spring tracks smoothly when the target updates often (scroll-linked steps on mobile). */
+    bar: reduced
+      ? { duration: 0 }
+      : {
+          type: 'spring' as const,
+          stiffness: 42,
+          damping: 22,
+          mass: 0.95,
+          restDelta: 0.01,
+        },
     /** Micro-interactions */
     micro: reduced ? { duration: 0 } : { duration: 0.12, ease: 'easeOut' as const },
   };
