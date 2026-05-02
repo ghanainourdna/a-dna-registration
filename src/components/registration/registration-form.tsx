@@ -79,8 +79,9 @@ const SECTIONS = [
   { id: "payment", title: "Payment" },
 ];
 
-/** IntersectionObserver for section ⇄ pill sync fights touch scrolling on phones; enabled from `md` up (Tailwind 768px). */
-const SECTION_IO_MEDIA = "(min-width: 768px)";
+/** Narrow screens use slightly looser vertical margins so section ⇄ progress stays in sync without fighting scroll. */
+const SECTION_NAV_IO_MARGIN_WIDE = "-42% 0px -42% 0px";
+const SECTION_NAV_IO_MARGIN_NARROW = "-36% 0px -36% 0px";
 
 function cn(...parts: Array<string | false | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -524,17 +525,20 @@ export function RegistrationForm({
   useEffect(() => {
     let io: IntersectionObserver | null = null;
 
-    const mq = window.matchMedia(SECTION_IO_MEDIA);
+    const narrowMq = window.matchMedia("(max-width: 767px)");
 
-    const connectIfWide = () => {
+    const connect = () => {
       io?.disconnect();
       io = null;
-      if (!mq.matches) return;
 
       const elements = SECTIONS.map((s) =>
         document.getElementById(`section-${s.id}`),
       ).filter((el): el is HTMLElement => el !== null);
       if (elements.length === 0) return;
+
+      const rootMargin = narrowMq.matches
+        ? SECTION_NAV_IO_MARGIN_NARROW
+        : SECTION_NAV_IO_MARGIN_WIDE;
 
       io = new IntersectionObserver(
         (entries) => {
@@ -548,17 +552,17 @@ export function RegistrationForm({
         },
         {
           root: null,
-          rootMargin: "-42% 0px -42% 0px",
+          rootMargin,
           threshold: [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.35, 0.5, 0.65, 0.8, 1],
         },
       );
       elements.forEach((el) => io!.observe(el));
     };
 
-    connectIfWide();
-    mq.addEventListener("change", connectIfWide);
+    connect();
+    narrowMq.addEventListener("change", connect);
     return () => {
-      mq.removeEventListener("change", connectIfWide);
+      narrowMq.removeEventListener("change", connect);
       io?.disconnect();
     };
   }, []);
@@ -705,7 +709,7 @@ export function RegistrationForm({
           </div>
           <div
             ref={sectionNavScrollRef}
-            className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:thin] scroll-smooth"
+            className="-mx-1 mt-3 flex min-w-0 gap-1.5 overflow-x-auto overscroll-x-contain px-1 pb-0.5 [scrollbar-width:thin] scroll-smooth touch-pan-x"
           >
             {SECTIONS.map((s, i) => {
               const past = i < resolvedIndex;
@@ -903,7 +907,7 @@ export function RegistrationForm({
                 {(role) =>
                   role === "other" ? (
                     <div>
-                      <Label required>Other role</Label>
+                      <Label>Other role</Label>
                       <form.Field
                         name="professional_role_other"
                         validators={registrationBlurFor(
@@ -1103,7 +1107,7 @@ export function RegistrationForm({
                 {(d) =>
                   d === "other" ? (
                     <div>
-                      <Label required>Specify dietary needs</Label>
+                      <Label>Specify dietary needs</Label>
                       <form.Field
                         name="dietary_other"
                         validators={registrationBlurFor("dietary_other", [
@@ -1165,7 +1169,7 @@ export function RegistrationForm({
                 {(a) =>
                   a === "other" ? (
                     <div>
-                      <Label required>Describe accessibility needs</Label>
+                      <Label>Describe accessibility needs</Label>
                       <form.Field
                         name="accessibility_other"
                         validators={registrationBlurFor("accessibility_other", [
@@ -1487,7 +1491,7 @@ export function RegistrationForm({
               {(show) =>
                 show ? (
                   <div className="mt-3">
-                    <Label required>Please specify other</Label>
+                    <Label>Please specify other</Label>
                     <form.Field
                       name="heard_about_other"
                       validators={registrationBlurFor("heard_about_other", [
@@ -1565,12 +1569,9 @@ export function RegistrationForm({
           <Section
             id="payment"
             title="Payment"
-            subtitle="Choose your registration bundle."
+            subtitle="Choose one registration type per attendee—you cannot combine multiple ticket types in a single registration."
           >
-            <fieldset
-              id={registrationControlId("registration_type")}
-              className="space-y-3"
-            >
+            <div className="space-y-3">
               <Label required className="mb-2 block">
                 Registration type
               </Label>
@@ -1580,51 +1581,73 @@ export function RegistrationForm({
                   "is_student",
                 ])}
               >
-                {(field) => (
-                  <>
-                    <div className="grid gap-2">
-                      {TIERS.map((key) => {
-                        const meta = REGISTRATION_TIER_LABELS[key];
-                        return (
-                          <label
-                            key={key}
-                            className={cn(
-                              "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-300",
-                              field.state.value === key
-                                ? "border-emerald-600 ring-1 ring-emerald-500"
-                                : "border-stone-200",
-                            )}
-                          >
-                            <input
-                              type="radio"
-                              checked={field.state.value === key}
-                              onBlur={field.handleBlur}
-                              onChange={() => field.handleChange(key)}
-                              className="mt-1 size-4 border-stone-300 text-emerald-600"
-                            />
-                            <span>
-                              <span className="block font-semibold text-stone-900">
-                                {meta.label}
+                {(field) => {
+                  const errMsg = summarizeFieldErrors(field.state.meta.errors);
+                  return (
+                    <>
+                      <div
+                        id={registrationControlId("registration_type")}
+                        role="radiogroup"
+                        aria-required="true"
+                        aria-invalid={errMsg ? true : undefined}
+                        aria-describedby={
+                          errMsg
+                            ? registrationFeedbackId("registration_type")
+                            : undefined
+                        }
+                        className={cn(
+                          "grid gap-2",
+                          errMsg && "rounded-xl outline outline-red-400/70",
+                        )}
+                      >
+                        {TIERS.map((key) => {
+                          const meta = REGISTRATION_TIER_LABELS[key];
+                          const optionId = `${registrationControlId("registration_type")}-${key}`;
+                          return (
+                            <label
+                              key={key}
+                              htmlFor={optionId}
+                              className={cn(
+                                "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-300",
+                                field.state.value === key
+                                  ? "border-emerald-600 ring-1 ring-emerald-500"
+                                  : "border-stone-200",
+                              )}
+                            >
+                              <input
+                                id={optionId}
+                                type="radio"
+                                name="registration_type"
+                                value={key}
+                                checked={field.state.value === key}
+                                onBlur={field.handleBlur}
+                                onChange={() => field.handleChange(key)}
+                                className="mt-1 size-4 shrink-0 border-stone-300 text-emerald-600"
+                              />
+                              <span>
+                                <span className="block font-semibold text-stone-900">
+                                  {meta.label}
+                                </span>
                               </span>
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                    <FieldFeedback
-                      meta={field.state.meta}
-                      id={registrationFeedbackId("registration_type")}
-                    />
-                  </>
-                )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <FieldFeedback
+                        meta={field.state.meta}
+                        id={registrationFeedbackId("registration_type")}
+                      />
+                    </>
+                  );
+                }}
               </form.Field>
-            </fieldset>
+            </div>
 
             <div className="mt-8 flex flex-col gap-3 border-t border-stone-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-2 text-xs text-stone-600">
                 <p>You will securely pay via Zeffy in the next step.</p>
                 <p className="text-xs leading-relaxed text-stone-500">
-                  A-DNA is a 501(c)(3) nonprofit. Amounts paid are not
+                  A-DNA is a 501(c)(3) nonprofit. Amounts paid are
                   tax-deductible.
                 </p>
               </div>
@@ -1722,8 +1745,7 @@ export function RegistrationForm({
                     Charges are finalized on your Zeffy receipt.
                   </p>
                   <p className="mt-2 text-xs leading-relaxed text-stone-500">
-                    A-DNA is a 501(c)(3) nonprofit; payments are not
-                    tax-deductible.
+                    A-DNA is a 501(c)(3) nonprofit; payments are tax-deductible.
                   </p>
                 </motion.div>
               </LayoutGroup>

@@ -213,16 +213,19 @@ export default async function RegisterPage() {
 
       <footer className="mx-auto w-full max-w-[min(115rem,calc(100%-2rem))] min-w-0 px-4 pb-10 pt-8 text-center text-sm leading-relaxed text-stone-500 md:px-10">
         <p className="mx-auto mb-6 max-w-[62ch] text-sm leading-relaxed text-stone-600">
-          African-Diaspora Nursing Alliance (A-DNA) is organized as a 501(c)(3) nonprofit. Registration fees and contributions are{' '}
-          <span className="font-medium text-stone-700">not tax-deductible</span> as charitable donations.
+          African-Diaspora Nursing Alliance (A-DNA) is organized as a 501(c)(3)
+          nonprofit. Registration fees and contributions are tax-deductible as
+          charitable donations.
         </p>
-        Please direct any questions to{' '}
-        <a
-          href="mailto:info@g-dna.org"
-          className="font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-900"
-        >
-          info@g-dna.org
-        </a>
+        <p className="mx-auto max-w-[62ch] text-sm leading-relaxed text-stone-600">
+          Please direct any questions to{' '}
+          <a
+            href="mailto:info@g-dna.org"
+            className="font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-900"
+          >
+            info@g-dna.org
+          </a>
+        </p>
       </footer>
     </main>
   );

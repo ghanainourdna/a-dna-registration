@@ -36,7 +36,12 @@ Copy values from your team or from Vercel project settings. Do not commit real s
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon (public) key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only; used for admin/catalog reads — never expose to the client |
-| `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` | Zeffy campaign checkout URL |
+| `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` | Default Zeffy URL (full ticketing page). Always required as fallback. |
+| `ZEFFY_CHECKOUT_URL_CONFERENCE_ONLY` | Optional per-tier direct checkout links — see below |
+| `ZEFFY_CHECKOUT_URL_STUDENT_CONFERENCE` | Optional |
+| `ZEFFY_CHECKOUT_URL_RECEPTION_ONLY` | Optional |
+| `ZEFFY_CHECKOUT_URL_CONFERENCE_AND_RECEPTION` | Optional |
+| `ZEFFY_CHECKOUT_URL_CONFERENCE_AND_RECEPTION_STUDENT` | Optional |
 | `ZEFFY_API_KEY` | Server-side Zeffy API key |
 | `ZEFFY_CAMPAIGN_ID` | Optional; narrows payment listing |
 | `ZEFFY_WEBHOOK_BEARER` | Optional; `Authorization: Bearer …` for webhooks |
@@ -45,6 +50,8 @@ Copy values from your team or from Vercel project settings. Do not commit real s
 | `EMAIL_REPLY_TO` | Reply-to for transactional mail |
 
 On Vercel, `VERCEL_URL` is set automatically; `NEXT_PUBLIC_APP_URL` should match your production domain in settings.
+
+**Tier-specific Zeffy URLs:** For each registration tier, you can set the matching `ZEFFY_CHECKOUT_URL_*` env var to a Zeffy share/deep link that opens **that ticket only** (so users skip the full grid). Payment init reads `registration_type` from the saved registration and picks that URL. If unset for a tier, the app uses `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL`. Registrations **with housing** always use the default campaign URL, because the total usually exceeds a single ticket link.
 
 ### Database
 

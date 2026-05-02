@@ -11,13 +11,14 @@ const E2E_COUNTRY_OPTIONS: CountryOption[] = [
   { code: 'US', name: 'United States of America' },
 ];
 
-/** Client for catalog reads: prefers service role, falls back to anon (needs public/countries SELECT policy). */
+/** Client for catalog reads: prefers anon (public SELECT); service role is fallback only. */
 function createCountriesSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   if (!url) return null;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
-  const key = serviceKey || anonKey;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  // Prefer anon so a stale/wrong service role key never breaks the country list.
+  const key = anonKey || serviceKey;
   if (!key) return null;
 
   return createClient(url, key, {
@@ -35,7 +36,7 @@ export async function fetchCountriesCatalog(): Promise<CountryOption[]> {
     const supabase = createCountriesSupabaseClient();
     if (!supabase) {
       console.error(
-        '[countries] missing NEXT_PUBLIC_SUPABASE_URL or (SUPABASE_SERVICE_ROLE_KEY | NEXT_PUBLIC_SUPABASE_ANON_KEY)',
+        '[countries] missing NEXT_PUBLIC_SUPABASE_URL or (NEXT_PUBLIC_SUPABASE_ANON_KEY | SUPABASE_SERVICE_ROLE_KEY)',
       );
       return [];
     }

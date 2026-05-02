@@ -106,13 +106,6 @@ export const registrationFormSchema = z
     registration_type: registrationTierSchema,
   })
   .superRefine((data, ctx) => {
-    if (data.professional_role === 'other' && !(data.professional_role_other ?? '').trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Please specify your role',
-        path: ['professional_role_other'],
-      });
-    }
     if (data.needs_housing === 'yes') {
       if (!data.room_type) {
         ctx.addIssue({
@@ -128,27 +121,6 @@ export const registrationFormSchema = z
           path: ['occupancy_type'],
         });
       }
-    }
-    if (data.dietary_requirements === 'other' && !(data.dietary_other ?? '').trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Describe dietary needs',
-        path: ['dietary_other'],
-      });
-    }
-    if (data.accessibility_needs === 'other' && !(data.accessibility_other ?? '').trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Describe accessibility needs',
-        path: ['accessibility_other'],
-      });
-    }
-    if (data.heard_about_us.includes('other') && !(data.heard_about_other ?? '').trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Please specify',
-        path: ['heard_about_other'],
-      });
     }
 
     /** Student tiers must align with attendee student status when ticket is discounted for students */
@@ -283,7 +255,8 @@ function normalizeOptional(v?: string | null) {
 
 function formatProfessionalRole(v: RegistrationFormValues) {
   if (v.professional_role === 'other') {
-    return `Other: ${(v.professional_role_other ?? '').trim()}`;
+    const detail = (v.professional_role_other ?? '').trim();
+    return detail ? `Other: ${detail}` : 'Other';
   }
   const labels: Record<(typeof professionalRoles)[number], string> = {
     registered_nurse: 'Registered Nurse (RN)',
@@ -315,7 +288,8 @@ function formatDietary(v: RegistrationFormValues) {
   };
   const main = base[v.dietary_requirements];
   if (v.dietary_requirements === 'other') {
-    return `${main}: ${(v.dietary_other ?? '').trim()}`;
+    const detail = (v.dietary_other ?? '').trim();
+    return detail ? `${main}: ${detail}` : main;
   }
   return main;
 }
@@ -331,7 +305,8 @@ function formatAccessibility(v: RegistrationFormValues) {
   };
   const main = base[v.accessibility_needs];
   if (v.accessibility_needs === 'other') {
-    return `${main}: ${(v.accessibility_other ?? '').trim()}`;
+    const detail = (v.accessibility_other ?? '').trim();
+    return detail ? `${main}: ${detail}` : main;
   }
   return main;
 }
@@ -355,7 +330,8 @@ function heardAboutLabels(v: RegistrationFormValues) {
   const parts = v.heard_about_us.map((k) => {
     const base = heardAboutLabelsLookup[k];
     if (k === 'other') {
-      return `${base}: ${(v.heard_about_other ?? '').trim()}`;
+      const detail = (v.heard_about_other ?? '').trim();
+      return detail ? `${base}: ${detail}` : base;
     }
     return base;
   });
