@@ -136,12 +136,6 @@ export default async function RegisterPage() {
                     </p>
                   </div>
                 </div>
-                <p className="mt-5 border-t border-white/14 pt-4 text-[12px] leading-relaxed text-stone-400/95 sm:text-xs">
-                  <span className="font-semibold text-stone-300">
-                    501(c)(3) nonprofit ·
-                  </span>{" "}
-                  Registration and payments are tax-deductible.
-                </p>
               </div>
             </aside>
           </div>
@@ -261,11 +255,6 @@ export default async function RegisterPage() {
       <RegistrationForm countries={countries} />
 
       <footer className="mx-auto w-full max-w-[min(115rem,calc(100%-2rem))] min-w-0 px-4 pb-10 pt-8 text-center text-sm leading-relaxed text-stone-500 md:px-10">
-        <p className="mx-auto mb-6 max-w-[62ch] text-sm leading-relaxed text-stone-600">
-          African-Diaspora Nursing Alliance (A-DNA) is organized as a 501(c)(3)
-          nonprofit. Registration fees and contributions are tax-deductible as
-          charitable donations.
-        </p>
         <p className="mx-auto max-w-[62ch] text-sm leading-relaxed text-stone-600">
           Please direct any questions to{" "}
           <a
