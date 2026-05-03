@@ -123,29 +123,24 @@ export const registrationFormSchema = z
       }
     }
 
-    /** Student tiers must align with attendee student status when ticket is discounted for students */
     const tier = data.registration_type;
-    const isStudentTicket =
+
+    if (data.is_student && tier !== registrationTierLiterals.student_conference) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Student attendees must select Student Conference.',
+        path: ['registration_type'],
+      });
+    }
+
+    const requiresStudentStatus =
       tier === registrationTierLiterals.student_conference ||
       tier === registrationTierLiterals.conference_and_reception_student;
-    if (isStudentTicket && !data.is_student) {
+    if (requiresStudentStatus && !data.is_student) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Student registration requires student status.',
         path: ['is_student'],
-      });
-    }
-
-    /** Non-student must not choose student tiers */
-    const studentTickets: RegistrationTier[] = [
-      'student_conference',
-      'conference_and_reception_student',
-    ];
-    if (!data.is_student && studentTickets.includes(tier)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Select a general registration tier or indicate you are a student.',
-        path: ['registration_type'],
       });
     }
   });

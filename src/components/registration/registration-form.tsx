@@ -68,6 +68,15 @@ const TIERS = Object.keys(
   REGISTRATION_TIER_LABELS,
 ) as RegistrationFormValues["registration_type"][];
 
+const STUDENT_ONLY_REGISTRATION_TYPE: RegistrationFormValues["registration_type"] =
+  "student_conference";
+
+/** When not a student, hide discounted student tiers (student flow only offers Student Conference). */
+const NON_STUDENT_REGISTRATION_TYPES = TIERS.filter(
+  (t) =>
+    t !== "student_conference" && t !== "conference_and_reception_student",
+);
+
 const SECTIONS = [
   { id: "personal", title: "Personal Information" },
   { id: "professional", title: "Professional Background" },
@@ -950,7 +959,10 @@ export function RegistrationForm({
                   </form.Field>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2">
+              <div className="rounded-lg border border-stone-200 bg-white px-3 py-3">
+                <Label required className="mb-2 block">
+                  Are you a student?
+                </Label>
                 <form.Field
                   name="is_student"
                   validators={registrationBlurFor("is_student", [
@@ -963,25 +975,63 @@ export function RegistrationForm({
                     );
                     return (
                       <>
-                        <label className="flex cursor-pointer items-center gap-2 text-sm text-stone-800">
-                          <input
-                            id={registrationControlId("is_student")}
-                            type="checkbox"
-                            checked={field.state.value}
-                            onBlur={field.handleBlur}
-                            onChange={(e) =>
-                              field.handleChange(e.target.checked)
-                            }
-                            aria-invalid={errMsg ? true : undefined}
-                            aria-describedby={
-                              errMsg
-                                ? registrationFeedbackId("is_student")
-                                : undefined
-                            }
-                            className="size-4 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
-                          />
-                          Are you a student?
-                        </label>
+                        <div
+                          id={registrationControlId("is_student")}
+                          role="radiogroup"
+                          aria-required="true"
+                          aria-invalid={errMsg ? true : undefined}
+                          aria-describedby={
+                            errMsg
+                              ? registrationFeedbackId("is_student")
+                              : undefined
+                          }
+                          className={cn(
+                            "flex flex-wrap gap-4 text-sm",
+                            errMsg && "rounded-lg outline outline-red-400/70",
+                          )}
+                        >
+                          {(
+                            [
+                              [true, "Yes"],
+                              [false, "No"],
+                            ] as const
+                          ).map(([val, label]) => (
+                            <label
+                              key={String(val)}
+                              className="flex cursor-pointer items-center gap-2 text-stone-800"
+                            >
+                              <input
+                                type="radio"
+                                name="is_student"
+                                checked={field.state.value === val}
+                                onBlur={field.handleBlur}
+                                onChange={() => {
+                                  field.handleChange(val);
+                                  if (val) {
+                                    form.setFieldValue(
+                                      "registration_type",
+                                      STUDENT_ONLY_REGISTRATION_TYPE,
+                                    );
+                                  } else {
+                                    const tier =
+                                      form.getFieldValue("registration_type");
+                                    if (
+                                      tier === "student_conference" ||
+                                      tier === "conference_and_reception_student"
+                                    ) {
+                                      form.setFieldValue(
+                                        "registration_type",
+                                        "conference_only",
+                                      );
+                                    }
+                                  }
+                                }}
+                                className="size-4 border-stone-300 text-emerald-600"
+                              />
+                              {label}
+                            </label>
+                          ))}
+                        </div>
                         <FieldFeedback
                           meta={field.state.meta}
                           id={registrationFeedbackId("is_student")}
@@ -1575,81 +1625,86 @@ export function RegistrationForm({
               <Label required className="mb-2 block">
                 Registration type
               </Label>
-              <form.Field
-                name="registration_type"
-                validators={registrationBlurFor("registration_type", [
-                  "is_student",
-                ])}
-              >
-                {(field) => {
-                  const errMsg = summarizeFieldErrors(field.state.meta.errors);
-                  return (
-                    <>
-                      <div
-                        id={registrationControlId("registration_type")}
-                        role="radiogroup"
-                        aria-required="true"
-                        aria-invalid={errMsg ? true : undefined}
-                        aria-describedby={
-                          errMsg
-                            ? registrationFeedbackId("registration_type")
-                            : undefined
-                        }
-                        className={cn(
-                          "grid gap-2",
-                          errMsg && "rounded-xl outline outline-red-400/70",
-                        )}
-                      >
-                        {TIERS.map((key) => {
-                          const meta = REGISTRATION_TIER_LABELS[key];
-                          const optionId = `${registrationControlId("registration_type")}-${key}`;
-                          return (
-                            <label
-                              key={key}
-                              htmlFor={optionId}
-                              className={cn(
-                                "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-300",
-                                field.state.value === key
-                                  ? "border-emerald-600 ring-1 ring-emerald-500"
-                                  : "border-stone-200",
-                              )}
-                            >
-                              <input
-                                id={optionId}
-                                type="radio"
-                                name="registration_type"
-                                value={key}
-                                checked={field.state.value === key}
-                                onBlur={field.handleBlur}
-                                onChange={() => field.handleChange(key)}
-                                className="mt-1 size-4 shrink-0 border-stone-300 text-emerald-600"
-                              />
-                              <span>
-                                <span className="block font-semibold text-stone-900">
-                                  {meta.label}
-                                </span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                      <FieldFeedback
-                        meta={field.state.meta}
-                        id={registrationFeedbackId("registration_type")}
-                      />
-                    </>
-                  );
-                }}
-              </form.Field>
+              <form.Subscribe selector={(s) => s.values.is_student}>
+                {(isStudent) => (
+                  <form.Field
+                    name="registration_type"
+                    validators={registrationBlurFor("registration_type", [
+                      "is_student",
+                    ])}
+                  >
+                    {(field) => {
+                      const errMsg = summarizeFieldErrors(
+                        field.state.meta.errors,
+                      );
+                      const tierOptions = isStudent
+                        ? [STUDENT_ONLY_REGISTRATION_TYPE]
+                        : NON_STUDENT_REGISTRATION_TYPES;
+                      return (
+                        <>
+                          <div
+                            id={registrationControlId("registration_type")}
+                            role="radiogroup"
+                            aria-required="true"
+                            aria-invalid={errMsg ? true : undefined}
+                            aria-describedby={
+                              errMsg
+                                ? registrationFeedbackId("registration_type")
+                                : undefined
+                            }
+                            className={cn(
+                              "grid gap-2",
+                              errMsg && "rounded-xl outline outline-red-400/70",
+                            )}
+                          >
+                            {tierOptions.map((key) => {
+                              const meta = REGISTRATION_TIER_LABELS[key];
+                              const optionId = `${registrationControlId("registration_type")}-${key}`;
+                              return (
+                                <label
+                                  key={key}
+                                  htmlFor={optionId}
+                                  className={cn(
+                                    "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-300",
+                                    field.state.value === key
+                                      ? "border-emerald-600 ring-1 ring-emerald-500"
+                                      : "border-stone-200",
+                                  )}
+                                >
+                                  <input
+                                    id={optionId}
+                                    type="radio"
+                                    name="registration_type"
+                                    value={key}
+                                    checked={field.state.value === key}
+                                    onBlur={field.handleBlur}
+                                    onChange={() => field.handleChange(key)}
+                                    className="mt-1 size-4 shrink-0 border-stone-300 text-emerald-600"
+                                  />
+                                  <span>
+                                    <span className="block font-semibold text-stone-900">
+                                      {meta.label}
+                                    </span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <FieldFeedback
+                            meta={field.state.meta}
+                            id={registrationFeedbackId("registration_type")}
+                          />
+                        </>
+                      );
+                    }}
+                  </form.Field>
+                )}
+              </form.Subscribe>
             </div>
 
             <div className="mt-8 flex flex-col gap-3 border-t border-stone-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-2 text-xs text-stone-600">
                 <p>You will securely pay via Zeffy in the next step.</p>
-                <p className="text-xs leading-relaxed text-stone-500">
-                  A-DNA is a 501(c)(3) nonprofit. Amounts paid are
-                  tax-deductible.
-                </p>
               </div>
               <motion.button
                 type="submit"
@@ -1743,9 +1798,6 @@ export function RegistrationForm({
                   <p className="mt-4 text-xs leading-relaxed text-stone-500">
                     Totals reflect current published rates for August 2026.
                     Charges are finalized on your Zeffy receipt.
-                  </p>
-                  <p className="mt-2 text-xs leading-relaxed text-stone-500">
-                    A-DNA is a 501(c)(3) nonprofit; payments are tax-deductible.
                   </p>
                 </motion.div>
               </LayoutGroup>

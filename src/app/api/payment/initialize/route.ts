@@ -1,7 +1,11 @@
 import { centsFromUsd, type OccupancyType, type RegistrationTier, type RoomTypeCode } from '@/lib/pricing';
 import { assertPricingMatches } from '@/lib/schemas/registration';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
-import { zeffyCheckoutUrlForTier } from '@/lib/zeffy-checkout-urls';
+import {
+  zeffyCheckoutUrlForTier,
+  zeffyShouldRouteToStudentCampaign,
+  zeffyStudentCampaignCheckoutUrl,
+} from '@/lib/zeffy-checkout-urls';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -16,6 +20,7 @@ type DbRow = {
   payment_status: 'pending' | 'paid' | 'failed';
   total_amount: string | number;
   registration_type: RegistrationTier;
+  is_student: boolean;
   needs_housing: boolean;
   room_type: RoomTypeCode | null;
   occupancy_type: OccupancyType | null;
@@ -96,6 +101,10 @@ function resolveCheckoutBaseUrl(row: DbRow, fallbackCampaignUrl: string): string
     return fallbackCampaignUrl;
   }
 
+  if (zeffyShouldRouteToStudentCampaign(row)) {
+    return zeffyStudentCampaignCheckoutUrl();
+  }
+
   const tierUrl = zeffyCheckoutUrlForTier(row.registration_type);
   return tierUrl ?? fallbackCampaignUrl;
 }
@@ -108,7 +117,7 @@ async function prepareCheckout(
   const { data, error } = await supabase
     .from('conference_registrations')
     .select(
-      'id,email,first_name,last_name,phone,payment_status,total_amount,registration_type,needs_housing,room_type,occupancy_type,registration_amount,housing_amount',
+      'id,email,first_name,last_name,phone,payment_status,total_amount,registration_type,is_student,needs_housing,room_type,occupancy_type,registration_amount,housing_amount',
     )
     .eq('id', registrationId)
     .single();
