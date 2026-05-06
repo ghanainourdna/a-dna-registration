@@ -68,10 +68,16 @@ const TIERS = Object.keys(
   REGISTRATION_TIER_LABELS,
 ) as RegistrationFormValues["registration_type"][];
 
-const STUDENT_ONLY_REGISTRATION_TYPE: RegistrationFormValues["registration_type"] =
+/** Default tier when the user switches to “Yes” for student. */
+const DEFAULT_STUDENT_REGISTRATION_TYPE: RegistrationFormValues["registration_type"] =
   "student_conference";
 
-/** When not a student, hide discounted student tiers (student flow only offers Student Conference). */
+const STUDENT_REGISTRATION_TYPES: RegistrationFormValues["registration_type"][] = [
+  "student_conference",
+  "conference_and_reception_student",
+];
+
+/** When not a student, hide discounted student tiers. */
 const NON_STUDENT_REGISTRATION_TYPES = TIERS.filter(
   (t) =>
     t !== "student_conference" && t !== "conference_and_reception_student",
@@ -1010,7 +1016,7 @@ export function RegistrationForm({
                                   if (val) {
                                     form.setFieldValue(
                                       "registration_type",
-                                      STUDENT_ONLY_REGISTRATION_TYPE,
+                                      DEFAULT_STUDENT_REGISTRATION_TYPE,
                                     );
                                   } else {
                                     const tier =
@@ -1638,7 +1644,7 @@ export function RegistrationForm({
                         field.state.meta.errors,
                       );
                       const tierOptions = isStudent
-                        ? [STUDENT_ONLY_REGISTRATION_TYPE]
+                        ? STUDENT_REGISTRATION_TYPES
                         : NON_STUDENT_REGISTRATION_TYPES;
                       return (
                         <>

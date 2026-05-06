@@ -125,10 +125,13 @@ export const registrationFormSchema = z
 
     const tier = data.registration_type;
 
-    if (data.is_student && tier !== registrationTierLiterals.student_conference) {
+    const studentRegistrationTier =
+      tier === registrationTierLiterals.student_conference ||
+      tier === registrationTierLiterals.conference_and_reception_student;
+    if (data.is_student && !studentRegistrationTier) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Student attendees must select Student Conference.',
+        message: 'Select a student registration option.',
         path: ['registration_type'],
       });
     }
