@@ -12,6 +12,7 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@react-email/render": "^2.0.8",
     "@supabase/supabase-js": "^2.105.1",
     "@tanstack/react-form": "^1.29.1",
     "framer-motion": "^12.38.0",
