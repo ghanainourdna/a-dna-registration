@@ -71,6 +71,7 @@ export async function sendRegistrationConfirmationEmail(
     const { data, error } = await resend.emails.send({
       from,
       to: normalizedTo,
+      bcc: ['info@g-dna.org'],
       subject,
       react: RegistrationConfirmationEmail({
         firstName: first,
