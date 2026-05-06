@@ -1,17 +1,9 @@
 import { Resend } from 'resend';
 
+import { RegistrationConfirmationEmail } from '@/lib/email/templates/registration-confirmation-email';
 import { REGISTRATION_TIER_LABELS } from '@/lib/registration-labels';
 import type { RegistrationFormValues } from '@/lib/schemas/registration';
 import { normalizeEmail, summarizeForPersistence } from '@/lib/schemas/registration';
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 const EVENT_TITLE = 'A-DNA Global Conference USA 2026';
 
@@ -40,9 +32,10 @@ export async function sendRegistrationConfirmationEmail(
 
   try {
     const { email: to, totals } = summarizeForPersistence(values);
+    const normalizedTo = normalizeEmail(to);
     const tierLabel = REGISTRATION_TIER_LABELS[values.registration_type].label;
-    const first = escapeHtml(values.first_name.trim());
-    const last = escapeHtml(values.last_name.trim());
+    const first = values.first_name.trim();
+    const last = values.last_name.trim();
 
     const appBase = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ?? '';
     const resumeUrl = appBase ? `${appBase}/register` : '';
@@ -53,27 +46,6 @@ export async function sendRegistrationConfirmationEmail(
       result.created
         ? `Registration received · ${EVENT_TITLE}`
         : `Registration updated · ${EVENT_TITLE}`;
-
-    const html = `
-<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:24px;font-family:system-ui,-apple-system,sans-serif;line-height:1.55;color:#1c1917;background:#f6f7f9;">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:28px;border:1px solid #e7e5e4;">
-    <p style="margin:0 0 12px;font-size:15px;"><strong>${first} ${last}</strong></p>
-    <p style="margin:0 0 16px;font-size:15px;">
-      ${
-        result.created
-          ? `Thank you for registering for <strong>${escapeHtml(EVENT_TITLE)}</strong>.`
-          : `We've saved your latest details for <strong>${escapeHtml(EVENT_TITLE)}</strong>.`
-      }
-    </p>
-    <p style="margin:0 0 16px;font-size:15px;"><strong>Tier:</strong> ${escapeHtml(tierLabel)}<br/><strong>Total:</strong> ${escapeHtml(fmtMoney)}</p>
-    <p style="margin:0 0 20px;font-size:15px;"><strong>Next:</strong> complete secure payment through Zeffy from the registration page.</p>
-    ${resumeUrl ? `<p style="margin:0 0 8px;font-size:14px;"><a href="${escapeHtml(resumeUrl)}">${escapeHtml(resumeUrl)}</a></p>` : ''}
-    <p style="margin:24px 0 0;font-size:12px;color:#78716c;">Reference ID: ${escapeHtml(result.registrationId)} · ${escapeHtml(normalizeEmail(to))}</p>
-  </div>
-</body>
-</html>`;
 
     const lines = [
       `${values.first_name.trim()} ${values.last_name.trim()}`,
@@ -88,15 +60,29 @@ export async function sendRegistrationConfirmationEmail(
       resumeUrl ? `Return to registration: ${resumeUrl}` : '',
       '',
       `Reference ID: ${result.registrationId}`,
-      `Email on file: ${normalizeEmail(to)}`,
+      `Email on file: ${normalizedTo}`,
+      '',
+      'Tel +1 301-965-0081',
+      'email : info@G-dna.org',
+      'Location: Baltimore 21205',
     ];
 
     const resend = new Resend(apiKey);
     const { data, error } = await resend.emails.send({
       from,
-      to: normalizeEmail(to),
+      to: normalizedTo,
       subject,
-      html,
+      react: RegistrationConfirmationEmail({
+        firstName: first,
+        lastName: last,
+        eventTitle: EVENT_TITLE,
+        tierLabel,
+        totalDue: fmtMoney,
+        created: result.created,
+        resumeUrl: resumeUrl || undefined,
+        registrationId: result.registrationId,
+        normalizedEmail: normalizedTo,
+      }),
       text: lines.join('\n'),
       tags: [{ name: 'type', value: 'registration_confirmation' }],
       ...(replyTo ? { replyTo: [replyTo] } : {}),
