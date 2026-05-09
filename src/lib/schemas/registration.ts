@@ -94,7 +94,7 @@ export const registrationFormSchema = z
     accessibility_other: z.string().trim().optional().or(z.literal('')),
     additional_notes: z.string().trim().optional().or(z.literal('')),
     needs_housing: z.enum(['yes', 'no']),
-    room_type: z.enum(['A', 'B']).optional().nullable(),
+    room_type: z.enum(['A', 'B', 'C']).optional().nullable(),
     occupancy_type: z.enum(['single', 'shared']).optional().nullable(),
     heard_about_us: z.array(z.enum(heardAboutOptions)).min(1, 'Select at least one option'),
     heard_about_other: z.string().trim().optional().or(z.literal('')),

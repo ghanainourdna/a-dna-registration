@@ -1,6 +1,10 @@
 export const HOUSING_NIGHTS = 3;
 export const HOUSING_DATES_LABEL = 'August 20–22, 2026';
 
+export function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 export const REGISTRATION_PRICES_USD = {
   conference_only: 200,
   student_conference: 100,
@@ -20,15 +24,38 @@ export const ROOM_BLOCK = {
 } as const;
 
 /** Per-night and 3-night shared totals match the organizer rate sheet */
+const housingTypeABase = {
+  perRoomNight: 196.23,
+  perGuestNightShared: 98.11,
+  fullStaySharedGuest: 294.34,
+} as const;
+
+const housingTypeBPerRoomNight = roundMoney(housingTypeABase.perRoomNight * 2);
+const housingTypeBPerGuestNightShared = roundMoney(
+  housingTypeABase.perGuestNightShared * 2,
+);
+/** Type B: double Type A nightly rates, 2-night stay (vs 3 for A and C) */
+const HOUSING_NIGHTS_TYPE_B = 2;
+
 export const HOUSING_RATES_USD = {
   A: {
-    perRoomNight: 196.23,
-    perGuestNightShared: 98.11,
-    fullStaySharedGuest: 294.34,
+    stayNights: HOUSING_NIGHTS,
+    ...housingTypeABase,
     /** single occupancy: room rate × 3 nights */
-    fullStaySingle: roundMoney(196.23 * HOUSING_NIGHTS),
+    fullStaySingle: roundMoney(housingTypeABase.perRoomNight * HOUSING_NIGHTS),
   },
   B: {
+    stayNights: HOUSING_NIGHTS_TYPE_B,
+    perRoomNight: housingTypeBPerRoomNight,
+    perGuestNightShared: housingTypeBPerGuestNightShared,
+    fullStaySharedGuest: roundMoney(
+      housingTypeBPerGuestNightShared * HOUSING_NIGHTS_TYPE_B,
+    ),
+    fullStaySingle: roundMoney(housingTypeBPerRoomNight * HOUSING_NIGHTS_TYPE_B),
+  },
+  /** Former Type B tier from the rate sheet */
+  C: {
+    stayNights: HOUSING_NIGHTS,
     perRoomNight: 217,
     perGuestNightShared: 108.49,
     fullStaySharedGuest: 325.48,
@@ -38,10 +65,6 @@ export const HOUSING_RATES_USD = {
 
 export type RoomTypeCode = keyof typeof HOUSING_RATES_USD;
 export type OccupancyType = 'single' | 'shared';
-
-export function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
 
 export function registrationAmountUsd(registrationTier: RegistrationTier): number {
   return REGISTRATION_PRICES_USD[registrationTier];
