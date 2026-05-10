@@ -18,6 +18,7 @@ import {
   HOUSING_RATES_USD,
   ROOM_BLOCK,
   totalAmountUsd,
+  type RoomTypeCode,
 } from "@/lib/pricing";
 import { REGISTRATION_TIER_LABELS } from "@/lib/registration-labels";
 import {
@@ -452,17 +453,13 @@ function SummaryUsd({
   );
 }
 
-function HousingRoomRateCard({
-  code,
-}: {
-  code: keyof typeof HOUSING_RATES_USD;
-}) {
+function HousingRoomRateCard({ code }: { code: RoomTypeCode }) {
   const r = HOUSING_RATES_USD[code];
   const rows: { label: string; value: number }[] = [
     { label: "Per room / night", value: r.perRoomNight },
     { label: "Per guest / night (sharing)", value: r.perGuestNightShared },
     {
-      label: "Per guest — full 3-night stay (sharing)",
+      label: `Per guest — full ${r.stayNights}-night stay (sharing)`,
       value: r.fullStaySharedGuest,
     },
   ];
@@ -1320,14 +1317,17 @@ export function RegistrationForm({
 
                 <blockquote className="rounded-xl border border-stone-200/90 bg-stone-50/80 px-4 py-3 text-sm leading-relaxed text-stone-700 md:px-5">
                   Rooms are first-come, first-served for{" "}
-                  <strong> {HOUSING_DATES_LABEL} </strong> (3 nights). Studio
-                  suites include 1&nbsp;King bed and a sofa bed (up to 2
-                  adults).
+                  <strong> {HOUSING_DATES_LABEL} </strong> (Types A and C: 3
+                  nights; Type B: 2 nights). Studio suites include 1&nbsp;King bed
+                  and a sofa bed (up to 2 adults).
                 </blockquote>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <HousingRoomRateCard code="A" />
-                  <HousingRoomRateCard code="B" />
+                  {(
+                    Object.keys(HOUSING_RATES_USD) as RoomTypeCode[]
+                  ).map((code) => (
+                    <HousingRoomRateCard key={code} code={code} />
+                  ))}
                 </div>
               </div>
             </div>
@@ -1401,21 +1401,22 @@ export function RegistrationForm({
                                       "rounded-lg outline outline-red-400/70",
                                   )}
                                 >
-                                  {(["A", "B"] as const).map((room) => (
-                                    <label
-                                      key={room}
-                                      className="flex cursor-pointer items-center gap-2 text-sm"
-                                    >
-                                      <input
-                                        type="radio"
-                                        checked={rf.state.value === room}
-                                        onBlur={rf.handleBlur}
-                                        onChange={() => rf.handleChange(room)}
-                                        className="size-4 border-stone-300 text-emerald-600"
-                                      />
-                                      Room Type {room}
-                                    </label>
-                                  ))}
+                                  {(Object.keys(HOUSING_RATES_USD) as RoomTypeCode[]).map(
+                                    (room) => (
+                                      <label
+                                        key={room}
+                                        className="flex cursor-pointer items-center gap-2 text-sm"
+                                      >
+                                        <input
+                                          type="radio"
+                                          checked={rf.state.value === room}
+                                          onBlur={rf.handleBlur}
+                                          onChange={() => rf.handleChange(room)}
+                                          className="size-4 border-stone-300 text-emerald-600"
+                                        />
+                                        Room Type {room}
+                                      </label>
+                                    ))}
                                 </div>
                                 <FieldFeedback
                                   meta={rf.state.meta}
