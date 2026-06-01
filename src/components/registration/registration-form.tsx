@@ -1782,12 +1782,15 @@ export function RegistrationForm({
                           transition={motionUi.fade}
                           className="flex min-w-0 justify-between gap-3 border-t border-dashed border-stone-200 pt-3"
                         >
-                          <span className="min-w-0 shrink truncate pr-2 text-left">
+                          <span className="min-w-0 shrink pr-2 text-left leading-snug">
                             {housingLine}
+                            <span className="mt-0.5 block text-xs font-normal text-stone-500">
+                              Estimated — not included in total due
+                            </span>
                           </span>
                           <SummaryUsd
                             amount={t.housingAmount}
-                            className="shrink-0 font-semibold tabular-nums"
+                            className="shrink-0 font-semibold tabular-nums text-stone-600"
                           />
                         </motion.div>
                       ) : null}
@@ -1803,8 +1806,9 @@ export function RegistrationForm({
                     </motion.div>
                   </div>
                   <p className="mt-4 text-xs leading-relaxed text-stone-500">
-                    Totals reflect current published rates for August 2026.
-                    Charges are finalized on your Zeffy receipt.
+                    Total due is conference registration only. Housing estimates
+                    are for planning; hotel charges are arranged separately.
+                    Registration payment is finalized on your Zeffy receipt.
                   </p>
                 </motion.div>
               </LayoutGroup>
