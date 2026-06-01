@@ -95,7 +95,8 @@ export function totalAmountUsd(input: {
   return {
     registrationAmount,
     housingAmount,
-    totalAmount: roundMoney(registrationAmount + housingAmount),
+    /** Conference fee only; housing is stored separately and billed outside this checkout. */
+    totalAmount: registrationAmount,
   };
 }
 

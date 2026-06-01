@@ -91,16 +91,6 @@ export async function POST(req: NextRequest) {
 }
 
 function resolveCheckoutBaseUrl(row: DbRow, fallbackCampaignUrl: string): string {
-  const housingUsd =
-    typeof row.housing_amount === 'string' ? Number.parseFloat(row.housing_amount) : row.housing_amount;
-  const hasHousingCharge =
-    row.needs_housing && Number.isFinite(housingUsd) && housingUsd > 0;
-
-  /** Single-ticket Zeffy links rarely include housing add-on; use full campaign URL. */
-  if (hasHousingCharge) {
-    return fallbackCampaignUrl;
-  }
-
   if (zeffyShouldRouteToStudentCampaign(row)) {
     return zeffyStudentCampaignCheckoutUrl();
   }
