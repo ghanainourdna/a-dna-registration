@@ -368,17 +368,26 @@ function summarizeFieldErrors(
   return undefined;
 }
 
+/**
+ * Field validators must use `onChange` (not `onBlur` alone).
+ * TanStack Form stores submit-time field errors under the matching cause; an
+ * `onBlur` error is not cleared by `handleChange`, so checkbox groups like
+ * `heard_about_us` can keep a stale "Select at least one option" and block
+ * Register & Pay even after the user selects options.
+ */
 function registrationBlurFor(
   key: keyof RegistrationFormValues,
   deps?: readonly (keyof RegistrationFormValues)[],
 ) {
-  const onBlur = ({
+  const onChange = ({
     fieldApi,
   }: {
     fieldApi: { form: { state: { values: RegistrationFormValues } } };
   }) => registrationFieldMessage(key, fieldApi.form.state.values);
 
-  return deps?.length ? { onBlur, onChangeListenTo: [...deps] } : { onBlur };
+  return deps?.length
+    ? { onChange, onChangeListenTo: [...deps] }
+    : { onChange };
 }
 
 function FieldFeedback({
