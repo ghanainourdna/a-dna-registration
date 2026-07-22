@@ -156,8 +156,8 @@ function scrollToFirstInvalidFormField(values: RegistrationFormValues): void {
       }
 
       const focusable = el.querySelector<
-        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      >("input, select, textarea");
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
+      >("input, select, textarea, button");
       if (focusable) {
         queueMicrotask(() => focusable.focus({ preventScroll: true }));
       }
@@ -374,20 +374,23 @@ function summarizeFieldErrors(
  * `onBlur` error is not cleared by `handleChange`, so checkbox groups like
  * `heard_about_us` can keep a stale "Select at least one option" and block
  * Register & Pay even after the user selects options.
+ *
+ * Also register the same check on `onSubmit` so a later submit always
+ * re-evaluates current values (important on mobile where touch focus/blur is flaky).
  */
 function registrationBlurFor(
   key: keyof RegistrationFormValues,
   deps?: readonly (keyof RegistrationFormValues)[],
 ) {
-  const onChange = ({
+  const validate = ({
     fieldApi,
   }: {
     fieldApi: { form: { state: { values: RegistrationFormValues } } };
   }) => registrationFieldMessage(key, fieldApi.form.state.values);
 
   return deps?.length
-    ? { onChange, onChangeListenTo: [...deps] }
-    : { onChange };
+    ? { onChange: validate, onSubmit: validate, onChangeListenTo: [...deps] }
+    : { onChange: validate, onSubmit: validate };
 }
 
 function FieldFeedback({
@@ -590,6 +593,10 @@ export function RegistrationForm({
 
   const form = useForm({
     defaultValues,
+    // After a failed submit, fields stay invalid until revalidated. Without this,
+    // handleSubmit short-circuits on canSubmit=false and never re-runs validators —
+    // common on mobile when heard-about selection updates after the first attempt.
+    canSubmitWhenInvalid: true,
     validators: {
       onSubmit: registrationFormSchema,
     },
@@ -1507,29 +1514,43 @@ export function RegistrationForm({
               name="heard_about_us"
               validators={registrationBlurFor("heard_about_us")}
             >
-              {(field) => (
-                <>
-                  <div
-                    id={registrationControlId("heard_about_us")}
-                    className={cn(
-                      "grid gap-2 sm:grid-cols-2",
-                      summarizeFieldErrors(field.state.meta.errors) &&
-                        "rounded-xl outline outline-red-400/70",
-                    )}
-                  >
-                    {heardAboutOptions.map((option) => {
-                      const list = field.state.value ?? [];
-                      const checked = list.includes(option);
-                      return (
-                        <label
-                          key={option}
-                          className="flex cursor-pointer items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onBlur={field.handleBlur}
-                            onChange={() => {
+              {(field) => {
+                const errMsg = summarizeFieldErrors(field.state.meta.errors);
+                const list = field.state.value ?? [];
+                return (
+                  <>
+                    <div
+                      id={registrationControlId("heard_about_us")}
+                      role="group"
+                      aria-required="true"
+                      aria-invalid={errMsg ? true : undefined}
+                      aria-describedby={
+                        errMsg
+                          ? registrationFeedbackId("heard_about_us")
+                          : undefined
+                      }
+                      className={cn(
+                        "grid gap-2 sm:grid-cols-2",
+                        errMsg && "rounded-xl outline outline-red-400/70",
+                      )}
+                    >
+                      {heardAboutOptions.map((option) => {
+                        const checked = list.includes(option);
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            role="checkbox"
+                            aria-checked={checked}
+                            // Avoid native checkbox + label touch bugs on iOS/WebKit
+                            // that can leave this required field empty after "selecting".
+                            className={cn(
+                              "flex touch-manipulation items-center gap-2 rounded-lg border bg-white px-3 py-2 text-left text-sm text-stone-800 transition",
+                              checked
+                                ? "border-emerald-600 ring-1 ring-emerald-500"
+                                : "border-stone-200",
+                            )}
+                            onClick={() => {
                               const next = checked
                                 ? list.filter((entry) => entry !== option)
                                 : [...list, option];
@@ -1537,19 +1558,45 @@ export function RegistrationForm({
                                 next as RegistrationFormValues["heard_about_us"],
                               );
                             }}
-                            className="size-4 rounded border-stone-300 text-emerald-600"
-                          />
-                          {heardLabel(option)}
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <FieldFeedback
-                    meta={field.state.meta}
-                    id={registrationFeedbackId("heard_about_us")}
-                  />
-                </>
-              )}
+                          >
+                            <span
+                              aria-hidden
+                              className={cn(
+                                "flex size-4 shrink-0 items-center justify-center rounded border",
+                                checked
+                                  ? "border-emerald-600 bg-emerald-600 text-white"
+                                  : "border-stone-300 bg-white",
+                              )}
+                            >
+                              {checked ? (
+                                <svg
+                                  width={10}
+                                  height={10}
+                                  viewBox="0 0 12 12"
+                                  fill="none"
+                                >
+                                  <path
+                                    d="M2.5 6.2 4.8 8.5 9.5 3.5"
+                                    stroke="currentColor"
+                                    strokeWidth={2}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              ) : null}
+                            </span>
+                            {heardLabel(option)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <FieldFeedback
+                      meta={field.state.meta}
+                      id={registrationFeedbackId("heard_about_us")}
+                    />
+                  </>
+                );
+              }}
             </form.Field>
             <form.Subscribe
               selector={(s) => s.values.heard_about_us.includes("other")}
