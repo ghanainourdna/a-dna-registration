@@ -153,7 +153,7 @@ export type RegistrationFormValues = z.infer<typeof registrationFormSchema>;
 
 /**
  * Validates the full registration object and returns only the message for {@pathKey}, if any.
- * Use with TanStack Field `validators.onBlur` so one field surfaces one error at a time;
+ * Use with TanStack Field `validators.onChange` so one field surfaces one error at a time;
  * form-level `validators.onSubmit` still runs this schema on submit.
  */
 export function registrationFieldMessage(key: keyof RegistrationFormValues, values: RegistrationFormValues): string | undefined {
