@@ -26,7 +26,7 @@ import {
   dietaryOptions,
   heardAboutOptions,
   professionalRoles,
-  registrationFieldMessage,
+  registrationFieldValidators,
   registrationFormSchema,
   type RegistrationFormValues,
 } from "@/lib/schemas/registration";
@@ -156,8 +156,8 @@ function scrollToFirstInvalidFormField(values: RegistrationFormValues): void {
       }
 
       const focusable = el.querySelector<
-        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      >("input, select, textarea");
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
+      >("input, select, textarea, button");
       if (focusable) {
         queueMicrotask(() => focusable.focus({ preventScroll: true }));
       }
@@ -368,26 +368,66 @@ function summarizeFieldErrors(
   return undefined;
 }
 
-/**
- * Field validators must use `onChange` (not `onBlur` alone).
- * TanStack Form stores submit-time field errors under the matching cause; an
- * `onBlur` error is not cleared by `handleChange`, so checkbox groups like
- * `heard_about_us` can keep a stale "Select at least one option" and block
- * Register & Pay even after the user selects options.
- */
-function registrationBlurFor(
-  key: keyof RegistrationFormValues,
-  deps?: readonly (keyof RegistrationFormValues)[],
-) {
-  const onChange = ({
-    fieldApi,
-  }: {
-    fieldApi: { form: { state: { values: RegistrationFormValues } } };
-  }) => registrationFieldMessage(key, fieldApi.form.state.values);
+/** @deprecated Prefer {@link registrationFieldValidators}; kept as a short local alias. */
+const registrationBlurFor = registrationFieldValidators;
 
-  return deps?.length
-    ? { onChange, onChangeListenTo: [...deps] }
-    : { onChange };
+/** Touch-safe choice control — avoids iOS/WebKit native radio/checkbox bugs. */
+function OptionToggle({
+  checked,
+  onSelect,
+  children,
+  className,
+  role = "radio",
+  indicator = "radio",
+}: {
+  checked: boolean;
+  onSelect: () => void;
+  children: ReactNode;
+  className?: string;
+  role?: "radio" | "checkbox";
+  indicator?: "radio" | "checkbox" | "none";
+}) {
+  return (
+    <button
+      type="button"
+      role={role}
+      aria-checked={checked}
+      onClick={onSelect}
+      className={cn(
+        "flex touch-manipulation items-center gap-2 text-left transition",
+        className,
+      )}
+    >
+      {indicator !== "none" ? (
+        <span
+          aria-hidden
+          className={cn(
+            "flex size-4 shrink-0 items-center justify-center border",
+            indicator === "radio" ? "rounded-full" : "rounded",
+            checked
+              ? "border-emerald-600 bg-emerald-600 text-white"
+              : "border-stone-300 bg-white",
+          )}
+        >
+          {checked && indicator === "checkbox" ? (
+            <svg width={10} height={10} viewBox="0 0 12 12" fill="none">
+              <path
+                d="M2.5 6.2 4.8 8.5 9.5 3.5"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : null}
+          {checked && indicator === "radio" ? (
+            <span className="size-1.5 rounded-full bg-white" />
+          ) : null}
+        </span>
+      ) : null}
+      {children}
+    </button>
+  );
 }
 
 function FieldFeedback({
@@ -590,6 +630,10 @@ export function RegistrationForm({
 
   const form = useForm({
     defaultValues,
+    // After a failed submit, fields stay invalid until revalidated. Without this,
+    // handleSubmit short-circuits on canSubmit=false and never re-runs validators —
+    // common on mobile when heard-about selection updates after the first attempt.
+    canSubmitWhenInvalid: true,
     validators: {
       onSubmit: registrationFormSchema,
     },
@@ -1008,40 +1052,35 @@ export function RegistrationForm({
                               [false, "No"],
                             ] as const
                           ).map(([val, label]) => (
-                            <label
+                            <OptionToggle
                               key={String(val)}
-                              className="flex cursor-pointer items-center gap-2 text-stone-800"
-                            >
-                              <input
-                                type="radio"
-                                name="is_student"
-                                checked={field.state.value === val}
-                                onBlur={field.handleBlur}
-                                onChange={() => {
-                                  field.handleChange(val);
-                                  if (val) {
+                              checked={field.state.value === val}
+                              className="text-stone-800"
+                              onSelect={() => {
+                                field.handleChange(val);
+                                if (val) {
+                                  form.setFieldValue(
+                                    "registration_type",
+                                    DEFAULT_STUDENT_REGISTRATION_TYPE,
+                                  );
+                                } else {
+                                  const tier =
+                                    form.getFieldValue("registration_type");
+                                  if (
+                                    tier === "student_conference" ||
+                                    tier ===
+                                      "conference_and_reception_student"
+                                  ) {
                                     form.setFieldValue(
                                       "registration_type",
-                                      DEFAULT_STUDENT_REGISTRATION_TYPE,
+                                      "conference_only",
                                     );
-                                  } else {
-                                    const tier =
-                                      form.getFieldValue("registration_type");
-                                    if (
-                                      tier === "student_conference" ||
-                                      tier === "conference_and_reception_student"
-                                    ) {
-                                      form.setFieldValue(
-                                        "registration_type",
-                                        "conference_only",
-                                      );
-                                    }
                                   }
-                                }}
-                                className="size-4 border-stone-300 text-emerald-600"
-                              />
+                                }
+                              }}
+                            >
                               {label}
-                            </label>
+                            </OptionToggle>
                           ))}
                         </div>
                         <FieldFeedback
@@ -1063,6 +1102,7 @@ export function RegistrationForm({
           >
             {!countryListReady ? (
               <p
+                id="country-list-unavailable"
                 className="mb-2 text-xs font-medium text-red-800"
                 role="status"
               >
@@ -1353,26 +1393,33 @@ export function RegistrationForm({
                     <>
                       <div
                         id={registrationControlId("needs_housing")}
+                        role="radiogroup"
+                        aria-required="true"
+                        aria-invalid={errMsg ? true : undefined}
+                        aria-describedby={
+                          errMsg
+                            ? registrationFeedbackId("needs_housing")
+                            : undefined
+                        }
                         className={cn(
                           "flex flex-wrap gap-4 rounded-lg text-sm",
                           errMsg && "outline outline-red-400/70",
                         )}
                       >
                         {(["yes", "no"] as const).map((opt) => (
-                          <label
+                          <OptionToggle
                             key={opt}
-                            className="flex cursor-pointer items-center gap-2"
+                            checked={field.state.value === opt}
+                            onSelect={() => {
+                              field.handleChange(opt);
+                              if (opt === "no") {
+                                form.setFieldValue("room_type", null);
+                                form.setFieldValue("occupancy_type", null);
+                              }
+                            }}
                           >
-                            <input
-                              type="radio"
-                              name="needs_housing"
-                              checked={field.state.value === opt}
-                              onBlur={field.handleBlur}
-                              onChange={() => field.handleChange(opt)}
-                              className="size-4 border-stone-300 text-emerald-600"
-                            />
                             {opt === "yes" ? "Yes" : "No"}
-                          </label>
+                          </OptionToggle>
                         ))}
                       </div>
                       <FieldFeedback
@@ -1404,6 +1451,14 @@ export function RegistrationForm({
                               <>
                                 <div
                                   id={registrationControlId("room_type")}
+                                  role="radiogroup"
+                                  aria-required="true"
+                                  aria-invalid={errMsg ? true : undefined}
+                                  aria-describedby={
+                                    errMsg
+                                      ? registrationFeedbackId("room_type")
+                                      : undefined
+                                  }
                                   className={cn(
                                     "space-y-2",
                                     errMsg &&
@@ -1412,20 +1467,16 @@ export function RegistrationForm({
                                 >
                                   {(Object.keys(HOUSING_RATES_USD) as RoomTypeCode[]).map(
                                     (room) => (
-                                      <label
+                                      <OptionToggle
                                         key={room}
-                                        className="flex cursor-pointer items-center gap-2 text-sm"
+                                        checked={rf.state.value === room}
+                                        className="w-full text-sm text-stone-800"
+                                        onSelect={() => rf.handleChange(room)}
                                       >
-                                        <input
-                                          type="radio"
-                                          checked={rf.state.value === room}
-                                          onBlur={rf.handleBlur}
-                                          onChange={() => rf.handleChange(room)}
-                                          className="size-4 border-stone-300 text-emerald-600"
-                                        />
                                         Room Type {room}
-                                      </label>
-                                    ))}
+                                      </OptionToggle>
+                                    ),
+                                  )}
                                 </div>
                                 <FieldFeedback
                                   meta={rf.state.meta}
@@ -1452,6 +1503,14 @@ export function RegistrationForm({
                               <>
                                 <div
                                   id={registrationControlId("occupancy_type")}
+                                  role="radiogroup"
+                                  aria-required="true"
+                                  aria-invalid={errMsg ? true : undefined}
+                                  aria-describedby={
+                                    errMsg
+                                      ? registrationFeedbackId("occupancy_type")
+                                      : undefined
+                                  }
                                   className={cn(
                                     "space-y-2",
                                     errMsg &&
@@ -1464,19 +1523,14 @@ export function RegistrationForm({
                                       ["shared", "Shared occupancy"],
                                     ] as const
                                   ).map(([val, lbl]) => (
-                                    <label
+                                    <OptionToggle
                                       key={val}
-                                      className="flex cursor-pointer items-center gap-2 text-sm"
+                                      checked={of.state.value === val}
+                                      className="w-full text-sm text-stone-800"
+                                      onSelect={() => of.handleChange(val)}
                                     >
-                                      <input
-                                        type="radio"
-                                        checked={of.state.value === val}
-                                        onBlur={of.handleBlur}
-                                        onChange={() => of.handleChange(val)}
-                                        className="size-4 border-stone-300 text-emerald-600"
-                                      />
                                       {lbl}
-                                    </label>
+                                    </OptionToggle>
                                   ))}
                                 </div>
                                 <FieldFeedback
@@ -1507,29 +1561,34 @@ export function RegistrationForm({
               name="heard_about_us"
               validators={registrationBlurFor("heard_about_us")}
             >
-              {(field) => (
-                <>
-                  <div
-                    id={registrationControlId("heard_about_us")}
-                    className={cn(
-                      "grid gap-2 sm:grid-cols-2",
-                      summarizeFieldErrors(field.state.meta.errors) &&
-                        "rounded-xl outline outline-red-400/70",
-                    )}
-                  >
-                    {heardAboutOptions.map((option) => {
-                      const list = field.state.value ?? [];
-                      const checked = list.includes(option);
-                      return (
-                        <label
-                          key={option}
-                          className="flex cursor-pointer items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800"
-                        >
-                          <input
-                            type="checkbox"
+              {(field) => {
+                const errMsg = summarizeFieldErrors(field.state.meta.errors);
+                const list = field.state.value ?? [];
+                return (
+                  <>
+                    <div
+                      id={registrationControlId("heard_about_us")}
+                      role="group"
+                      className={cn(
+                        "grid gap-2 sm:grid-cols-2",
+                        errMsg && "rounded-xl outline outline-red-400/70",
+                      )}
+                    >
+                      {heardAboutOptions.map((option) => {
+                        const checked = list.includes(option);
+                        return (
+                          <OptionToggle
+                            key={option}
+                            role="checkbox"
+                            indicator="checkbox"
                             checked={checked}
-                            onBlur={field.handleBlur}
-                            onChange={() => {
+                            className={cn(
+                              "rounded-lg border bg-white px-3 py-2 text-sm text-stone-800",
+                              checked
+                                ? "border-emerald-600 ring-1 ring-emerald-500"
+                                : "border-stone-200",
+                            )}
+                            onSelect={() => {
                               const next = checked
                                 ? list.filter((entry) => entry !== option)
                                 : [...list, option];
@@ -1537,19 +1596,19 @@ export function RegistrationForm({
                                 next as RegistrationFormValues["heard_about_us"],
                               );
                             }}
-                            className="size-4 rounded border-stone-300 text-emerald-600"
-                          />
-                          {heardLabel(option)}
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <FieldFeedback
-                    meta={field.state.meta}
-                    id={registrationFeedbackId("heard_about_us")}
-                  />
-                </>
-              )}
+                          >
+                            {heardLabel(option)}
+                          </OptionToggle>
+                        );
+                      })}
+                    </div>
+                    <FieldFeedback
+                      meta={field.state.meta}
+                      id={registrationFeedbackId("heard_about_us")}
+                    />
+                  </>
+                );
+              }}
             </form.Field>
             <form.Subscribe
               selector={(s) => s.values.heard_about_us.includes("other")}
@@ -1675,34 +1734,23 @@ export function RegistrationForm({
                           >
                             {tierOptions.map((key) => {
                               const meta = REGISTRATION_TIER_LABELS[key];
-                              const optionId = `${registrationControlId("registration_type")}-${key}`;
                               return (
-                                <label
+                                <OptionToggle
                                   key={key}
-                                  htmlFor={optionId}
+                                  checked={field.state.value === key}
+                                  indicator="none"
                                   className={cn(
-                                    "flex cursor-pointer items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-300",
+                                    "items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-300",
                                     field.state.value === key
                                       ? "border-emerald-600 ring-1 ring-emerald-500"
                                       : "border-stone-200",
                                   )}
+                                  onSelect={() => field.handleChange(key)}
                                 >
-                                  <input
-                                    id={optionId}
-                                    type="radio"
-                                    name="registration_type"
-                                    value={key}
-                                    checked={field.state.value === key}
-                                    onBlur={field.handleBlur}
-                                    onChange={() => field.handleChange(key)}
-                                    className="mt-1 size-4 shrink-0 border-stone-300 text-emerald-600"
-                                  />
-                                  <span>
-                                    <span className="block font-semibold text-stone-900">
-                                      {meta.label}
-                                    </span>
+                                  <span className="block font-semibold text-stone-900">
+                                    {meta.label}
                                   </span>
-                                </label>
+                                </OptionToggle>
                               );
                             })}
                           </div>
@@ -1720,11 +1768,21 @@ export function RegistrationForm({
 
             <div className="mt-8 flex flex-col gap-3 border-t border-stone-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
               <div className="space-y-2 text-xs text-stone-600">
-                <p>You will securely pay via Zeffy in the next step.</p>
+                {!countryListReady ? (
+                  <p className="font-medium text-red-800" role="status">
+                    Country list is unavailable, so payment is disabled. Refresh
+                    after the countries catalog loads.
+                  </p>
+                ) : (
+                  <p>You will securely pay via Zeffy in the next step.</p>
+                )}
               </div>
               <motion.button
                 type="submit"
                 disabled={submitting || !countryListReady}
+                aria-describedby={
+                  !countryListReady ? "country-list-unavailable" : undefined
+                }
                 whileHover={
                   submitting || !countryListReady || motionUi.reduced
                     ? undefined
@@ -1840,16 +1898,27 @@ export function RegistrationForm({
             return (
               <div className="mx-auto flex min-w-0 w-full max-w-[min(115rem,100%)] items-center justify-between gap-2 sm:gap-4 md:gap-6">
                 <div className="min-w-0 pr-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
-                    Total
-                  </p>
-                  <p className="truncate text-lg font-semibold tabular-nums tracking-tight text-emerald-900">
-                    <SummaryUsd amount={t.totalAmount} />
-                  </p>
+                  {!countryListReady ? (
+                    <p className="text-xs font-medium text-red-800" role="status">
+                      Countries unavailable — refresh to enable payment.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+                        Total
+                      </p>
+                      <p className="truncate text-lg font-semibold tabular-nums tracking-tight text-emerald-900">
+                        <SummaryUsd amount={t.totalAmount} />
+                      </p>
+                    </>
+                  )}
                 </div>
                 <motion.button
                   type="button"
                   disabled={submitting || !countryListReady}
+                  aria-describedby={
+                    !countryListReady ? "country-list-unavailable" : undefined
+                  }
                   whileHover={
                     submitting || !countryListReady || motionUi.reduced
                       ? undefined

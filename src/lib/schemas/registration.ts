@@ -152,15 +152,73 @@ export type RegistrationFormInput = z.input<typeof registrationFormSchema>;
 export type RegistrationFormValues = z.infer<typeof registrationFormSchema>;
 
 /**
+ * Cross-field rules that live in `superRefine`. Zod only runs `superRefine` when the
+ * object shape already parses, so empty required strings would hide housing/student
+ * errors during partial form fills. Field validators call this first.
+ */
+export function registrationCrossFieldMessage(
+  key: keyof RegistrationFormValues,
+  data: RegistrationFormValues,
+): string | undefined {
+  if (data.needs_housing === 'yes') {
+    if (key === 'room_type' && !data.room_type) {
+      return 'Select a room type';
+    }
+    if (key === 'occupancy_type' && !data.occupancy_type) {
+      return 'Select single or shared occupancy';
+    }
+  }
+
+  const tier = data.registration_type;
+  const studentRegistrationTier =
+    tier === registrationTierLiterals.student_conference ||
+    tier === registrationTierLiterals.conference_and_reception_student;
+
+  if (key === 'registration_type' && data.is_student && !studentRegistrationTier) {
+    return 'Select a student registration option.';
+  }
+  if (key === 'is_student' && studentRegistrationTier && !data.is_student) {
+    return 'Student registration requires student status.';
+  }
+
+  return undefined;
+}
+
+/**
  * Validates the full registration object and returns only the message for {@pathKey}, if any.
  * Use with TanStack Field `validators.onChange` so one field surfaces one error at a time;
  * form-level `validators.onSubmit` still runs this schema on submit.
  */
 export function registrationFieldMessage(key: keyof RegistrationFormValues, values: RegistrationFormValues): string | undefined {
+  const cross = registrationCrossFieldMessage(key, values);
+  if (cross) return cross;
+
   const result = registrationFormSchema.safeParse(values);
   if (result.success) return undefined;
   const issue = result.error.issues.find((i) => i.path[0] === key);
   return issue?.message;
+}
+
+/**
+ * Field validators must use `onChange` (not `onBlur` alone).
+ * TanStack Form stores submit-time field errors under the matching cause; an
+ * `onBlur` error is not cleared by `handleChange`, which blocked Register & Pay
+ * after checkbox/radio selection. Mirror the check on `onSubmit` so resubmit
+ * always re-evaluates current values.
+ */
+export function registrationFieldValidators(
+  key: keyof RegistrationFormValues,
+  deps?: readonly (keyof RegistrationFormValues)[],
+) {
+  const validate = ({
+    fieldApi,
+  }: {
+    fieldApi: { form: { state: { values: RegistrationFormValues } } };
+  }) => registrationFieldMessage(key, fieldApi.form.state.values);
+
+  return deps?.length
+    ? { onChange: validate, onSubmit: validate, onChangeListenTo: [...deps] }
+    : { onChange: validate, onSubmit: validate };
 }
 
 export function summarizeForPersistence(values: RegistrationFormValues) {
