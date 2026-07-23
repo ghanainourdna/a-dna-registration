@@ -1569,13 +1569,6 @@ export function RegistrationForm({
                     <div
                       id={registrationControlId("heard_about_us")}
                       role="group"
-                      aria-required="true"
-                      aria-invalid={errMsg ? true : undefined}
-                      aria-describedby={
-                        errMsg
-                          ? registrationFeedbackId("heard_about_us")
-                          : undefined
-                      }
                       className={cn(
                         "grid gap-2 sm:grid-cols-2",
                         errMsg && "rounded-xl outline outline-red-400/70",
