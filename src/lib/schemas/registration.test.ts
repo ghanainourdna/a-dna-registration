@@ -4,6 +4,7 @@ import {
   registrationFieldMessage,
   registrationFieldValidators,
   registrationFormSchema,
+  summarizeForPersistence,
   type RegistrationFormValues,
 } from '@/lib/schemas/registration';
 
@@ -116,6 +117,26 @@ describe('registrationFormSchema', () => {
         result.error.issues.some((i) => i.path[0] === 'registration_type'),
       ).toBe(true);
     }
+  });
+
+  it('accepts virtual registration at $100 for students and non-students', () => {
+    expect(
+      registrationFormSchema.safeParse(
+        validBase({ registration_type: 'virtual' }),
+      ).success,
+    ).toBe(true);
+    expect(
+      registrationFormSchema.safeParse(
+        validBase({ is_student: true, registration_type: 'virtual' }),
+      ).success,
+    ).toBe(true);
+
+    const persisted = summarizeForPersistence(
+      validBase({ registration_type: 'virtual' }),
+    );
+    expect(persisted.payload.registration_type).toBe('virtual');
+    expect(persisted.payload.registration_amount).toBe(100);
+    expect(persisted.payload.total_amount).toBe(100);
   });
 });
 

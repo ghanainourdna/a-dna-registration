@@ -39,6 +39,7 @@ const TIER_ENV_KEYS: Record<RegistrationTier, string> = {
   reception_only: 'ZEFFY_CHECKOUT_URL_RECEPTION_ONLY',
   conference_and_reception: 'ZEFFY_CHECKOUT_URL_CONFERENCE_AND_RECEPTION',
   conference_and_reception_student: 'ZEFFY_CHECKOUT_URL_CONFERENCE_AND_RECEPTION_STUDENT',
+  virtual: 'ZEFFY_CHECKOUT_URL_VIRTUAL',
 };
 
 export function zeffyCheckoutUrlForTier(tier: RegistrationTier): string | undefined {

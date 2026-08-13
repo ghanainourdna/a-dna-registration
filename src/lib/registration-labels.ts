@@ -9,4 +9,5 @@ export const REGISTRATION_TIER_LABELS: Record<RegistrationTier, { label: string;
     label: '$200 — Student Conference + Reception',
     price: 200,
   },
+  virtual: { label: '$100 — Virtual', price: 100 },
 };
