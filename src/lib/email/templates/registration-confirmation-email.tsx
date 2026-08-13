@@ -3,9 +3,8 @@ type RegistrationConfirmationEmailProps = {
   lastName: string;
   eventTitle: string;
   tierLabel: string;
-  totalDue: string;
-  created: boolean;
-  resumeUrl?: string;
+  totalPaid: string;
+  detailsUrl?: string;
   registrationId: string;
   normalizedEmail: string;
 };
@@ -69,9 +68,8 @@ export function RegistrationConfirmationEmail({
   lastName,
   eventTitle,
   tierLabel,
-  totalDue,
-  created,
-  resumeUrl,
+  totalPaid,
+  detailsUrl,
   registrationId,
   normalizedEmail,
 }: RegistrationConfirmationEmailProps) {
@@ -85,23 +83,19 @@ export function RegistrationConfirmationEmail({
         </p>
 
         <p style={styles.p}>
-          {created ? "Thank you for registering for " : "We've saved your latest details for "}
-          <strong>{eventTitle}</strong>.
+          Thank you for registering for <strong>{eventTitle}</strong>. Your
+          payment has been received and your registration is confirmed.
         </p>
 
         <p style={styles.p}>
           <strong>Tier:</strong> {tierLabel}
           <br />
-          <strong>Total:</strong> {totalDue}
+          <strong>Amount paid:</strong> {totalPaid}
         </p>
 
-        <p style={{ ...styles.p, margin: "0 0 20px" }}>
-          <strong>Next:</strong> complete secure payment through Zeffy from the registration page.
-        </p>
-
-        {resumeUrl ? (
+        {detailsUrl ? (
           <p style={styles.link}>
-            <a href={resumeUrl}>{resumeUrl}</a>
+            <a href={detailsUrl}>{detailsUrl}</a>
           </p>
         ) : null}
 

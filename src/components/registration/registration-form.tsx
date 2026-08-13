@@ -1776,7 +1776,7 @@ export function RegistrationForm({
                     after the countries catalog loads.
                   </p>
                 ) : (
-                  <p>You will securely pay via Zeffy in the next step.</p>
+                  <p>You will securely pay via Zeffy in the next step. A confirmation email is sent after payment succeeds.</p>
                 )}
               </div>
               <motion.button

@@ -63,7 +63,7 @@ function SuccessContent() {
       setState({
         status: 'error',
         message:
-          'Missing registration confirmation. Complete payment on Zeffy, then return using the link shown after checkout or reopen this tab from your registration confirmation email.',
+          'Missing registration confirmation. Complete payment on Zeffy, then return using the link shown after checkout.',
       });
       return;
     }
@@ -173,7 +173,7 @@ function SuccessContent() {
           Payment confirmed — thank you! Your seat (and housing where selected) will be finalized by the registrar.
         </p>
         <p>
-          Detailed logistics for the Johns Hopkins gathering will arrive by email shortly. Reach out anytime at{' '}
+          A confirmation email is on its way. Detailed logistics for the Johns Hopkins gathering will follow. Reach out anytime at{' '}
           <a className="text-emerald-700 underline underline-offset-2" href="mailto:info@g-dna.org">
             info@g-dna.org
           </a>

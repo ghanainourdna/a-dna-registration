@@ -1,4 +1,3 @@
-import { sendRegistrationConfirmationEmail } from '@/lib/email/send-registration-confirmation';
 import { DuplicateRegistrationError, InvalidCountryError } from '@/lib/errors';
 import type { RegistrationTier } from '@/lib/pricing';
 import type { RegistrationFormValues } from '@/lib/schemas/registration';
@@ -29,7 +28,6 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await saveRegistration(parsed.data);
-    await sendRegistrationConfirmationEmail(parsed.data, result);
     return NextResponse.json(result, { status: result.created ? 201 : 200 });
   } catch (e: unknown) {
     if (e instanceof InvalidCountryError) {

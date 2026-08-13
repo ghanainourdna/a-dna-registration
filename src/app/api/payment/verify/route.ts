@@ -1,3 +1,4 @@
+import { sendPaidRegistrationConfirmationIfNeeded } from '@/lib/email/send-registration-confirmation';
 import {
   fetchRegistrationPaymentRowForFinalize,
   finalizeRegistrationPaymentForRow,
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
     const totalUsd = typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
 
     if (row.payment_status === 'paid') {
+      await sendPaidRegistrationConfirmationIfNeeded(supabase, row.id);
       return NextResponse.json({
         registrationId: row.id,
         paymentStatus: 'paid',
@@ -82,6 +84,8 @@ export async function POST(req: NextRequest) {
     if (fin.outcome === 'db_error') {
       return NextResponse.json({ error: fin.message }, { status: 500 });
     }
+
+    await sendPaidRegistrationConfirmationIfNeeded(supabase, fin.registrationId);
 
     return NextResponse.json({
       registrationId: fin.registrationId,

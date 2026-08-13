@@ -1,3 +1,4 @@
+import { sendPaidRegistrationConfirmationIfNeeded } from '@/lib/email/send-registration-confirmation';
 import {
   finalizeRegistrationPaymentForRow,
   resolveRegistrationRowForZeffyWebhook,
@@ -88,6 +89,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     !!insertError && (insertError.code === '23505' || /duplicate key value/i.test(insertError.message ?? ''));
 
   if (duplicateWebhook) {
+    const { data: audit } = await supabase
+      .from('provider_payment_audit')
+      .select('registration_id')
+      .eq('provider', 'zeffy')
+      .eq('external_payment_id', coerced.id)
+      .maybeSingle();
+    if (audit?.registration_id) {
+      await sendPaidRegistrationConfirmationIfNeeded(supabase, audit.registration_id as string);
+    }
     return new Response(null, { status: 200 });
   }
 
@@ -144,6 +154,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (patch.error) {
     console.warn('[zeffy webhook] audit registration_id patch', patch.error.message);
   }
+
+  await sendPaidRegistrationConfirmationIfNeeded(supabase, regId);
 
   return new Response(null, { status: 200 });
 }
