@@ -11,6 +11,7 @@ export const REGISTRATION_PRICES_USD = {
   reception_only: 100,
   conference_and_reception: 250,
   conference_and_reception_student: 200,
+  virtual: 100,
 } as const;
 
 export type RegistrationTier = keyof typeof REGISTRATION_PRICES_USD;

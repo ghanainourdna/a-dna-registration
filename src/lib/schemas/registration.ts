@@ -63,6 +63,7 @@ export const registrationTierSchema = z.enum([
   'reception_only',
   'conference_and_reception',
   'conference_and_reception_student',
+  'virtual',
 ]);
 
 const registrationTierLiterals = registrationTierSchema.Enum;
@@ -125,10 +126,12 @@ export const registrationFormSchema = z
 
     const tier = data.registration_type;
 
-    const studentRegistrationTier =
+    const studentDiscountTier =
       tier === registrationTierLiterals.student_conference ||
       tier === registrationTierLiterals.conference_and_reception_student;
-    if (data.is_student && !studentRegistrationTier) {
+    const allowedWhenStudent =
+      studentDiscountTier || tier === registrationTierLiterals.virtual;
+    if (data.is_student && !allowedWhenStudent) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Select a student registration option.',
@@ -136,9 +139,7 @@ export const registrationFormSchema = z
       });
     }
 
-    const requiresStudentStatus =
-      tier === registrationTierLiterals.student_conference ||
-      tier === registrationTierLiterals.conference_and_reception_student;
+    const requiresStudentStatus = studentDiscountTier;
     if (requiresStudentStatus && !data.is_student) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -170,14 +171,16 @@ export function registrationCrossFieldMessage(
   }
 
   const tier = data.registration_type;
-  const studentRegistrationTier =
+  const studentDiscountTier =
     tier === registrationTierLiterals.student_conference ||
     tier === registrationTierLiterals.conference_and_reception_student;
+  const allowedWhenStudent =
+    studentDiscountTier || tier === registrationTierLiterals.virtual;
 
-  if (key === 'registration_type' && data.is_student && !studentRegistrationTier) {
+  if (key === 'registration_type' && data.is_student && !allowedWhenStudent) {
     return 'Select a student registration option.';
   }
-  if (key === 'is_student' && studentRegistrationTier && !data.is_student) {
+  if (key === 'is_student' && studentDiscountTier && !data.is_student) {
     return 'Student registration requires student status.';
   }
 

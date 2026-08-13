@@ -42,6 +42,7 @@ Copy values from your team or from Vercel project settings. Do not commit real s
 | `ZEFFY_CHECKOUT_URL_RECEPTION_ONLY` | Optional |
 | `ZEFFY_CHECKOUT_URL_CONFERENCE_AND_RECEPTION` | Optional |
 | `ZEFFY_CHECKOUT_URL_CONFERENCE_AND_RECEPTION_STUDENT` | Optional |
+| `ZEFFY_CHECKOUT_URL_VIRTUAL` | Optional |
 | `ZEFFY_API_KEY` | Server-side Zeffy API key |
 | `ZEFFY_CAMPAIGN_ID` | Optional; narrows payment listing |
 | `ZEFFY_WEBHOOK_BEARER` | Optional; `Authorization: Bearer …` for webhooks |

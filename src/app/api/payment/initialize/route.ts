@@ -1,11 +1,7 @@
 import { centsFromUsd, type OccupancyType, type RegistrationTier, type RoomTypeCode } from '@/lib/pricing';
 import { assertPricingMatches } from '@/lib/schemas/registration';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
-import {
-  zeffyCheckoutUrlForTier,
-  zeffyShouldRouteToStudentCampaign,
-  zeffyStudentCampaignCheckoutUrl,
-} from '@/lib/zeffy-checkout-urls';
+import { resolveZeffyCheckoutBaseUrl } from '@/lib/zeffy-checkout-urls';
 
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -90,15 +86,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function resolveCheckoutBaseUrl(row: DbRow, fallbackCampaignUrl: string): string {
-  if (zeffyShouldRouteToStudentCampaign(row)) {
-    return zeffyStudentCampaignCheckoutUrl();
-  }
-
-  const tierUrl = zeffyCheckoutUrlForTier(row.registration_type);
-  return tierUrl ?? fallbackCampaignUrl;
-}
-
 async function prepareCheckout(
   registrationId: string,
   supabase: ReturnType<typeof getSupabaseAdmin>,
@@ -135,7 +122,7 @@ async function prepareCheckout(
 
   const correlationToken = `ADNA26-${registrationId}-${Date.now()}`.slice(0, 200);
 
-  const checkoutBaseUrl = resolveCheckoutBaseUrl(row, fallbackCampaignUrl);
+  const checkoutBaseUrl = resolveZeffyCheckoutBaseUrl(row, fallbackCampaignUrl);
 
   return {
     registrationId,

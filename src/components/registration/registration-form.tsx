@@ -76,6 +76,7 @@ const DEFAULT_STUDENT_REGISTRATION_TYPE: RegistrationFormValues["registration_ty
 const STUDENT_REGISTRATION_TYPES: RegistrationFormValues["registration_type"][] = [
   "student_conference",
   "conference_and_reception_student",
+  "virtual",
 ];
 
 /** When not a student, hide discounted student tiers. */
@@ -1058,24 +1059,25 @@ export function RegistrationForm({
                               className="text-stone-800"
                               onSelect={() => {
                                 field.handleChange(val);
+                                const tier =
+                                  form.getFieldValue("registration_type");
                                 if (val) {
-                                  form.setFieldValue(
-                                    "registration_type",
-                                    DEFAULT_STUDENT_REGISTRATION_TYPE,
-                                  );
-                                } else {
-                                  const tier =
-                                    form.getFieldValue("registration_type");
                                   if (
-                                    tier === "student_conference" ||
-                                    tier ===
-                                      "conference_and_reception_student"
+                                    !STUDENT_REGISTRATION_TYPES.includes(tier)
                                   ) {
                                     form.setFieldValue(
                                       "registration_type",
-                                      "conference_only",
+                                      DEFAULT_STUDENT_REGISTRATION_TYPE,
                                     );
                                   }
+                                } else if (
+                                  tier === "student_conference" ||
+                                  tier === "conference_and_reception_student"
+                                ) {
+                                  form.setFieldValue(
+                                    "registration_type",
+                                    "conference_only",
+                                  );
                                 }
                               }}
                             >
