@@ -20,6 +20,8 @@ export function zeffyShouldRouteToStudentCampaign(row: {
   is_student: boolean;
   registration_type: RegistrationTier;
 }): boolean {
+  // Virtual has its own checkout (`ZEFFY_CHECKOUT_URL_VIRTUAL`) for students and non-students.
+  if (row.registration_type === 'virtual') return false;
   if (row.is_student) return true;
   return (
     row.registration_type === 'student_conference' ||
@@ -46,4 +48,27 @@ export function zeffyCheckoutUrlForTier(tier: RegistrationTier): string | undefi
   const key = TIER_ENV_KEYS[tier];
   const raw = key ? process.env[key]?.trim() : undefined;
   return raw || undefined;
+}
+
+/**
+ * Hosted checkout URL for a saved registration.
+ * Virtual always uses the virtual tier URL (or the generic campaign fallback), even when the
+ * registrant is a student — the student conference campaign is in-person only.
+ */
+export function resolveZeffyCheckoutBaseUrl(
+  row: {
+    is_student: boolean;
+    registration_type: RegistrationTier;
+  },
+  fallbackCampaignUrl: string,
+): string {
+  if (row.registration_type === 'virtual') {
+    return zeffyCheckoutUrlForTier('virtual') ?? fallbackCampaignUrl;
+  }
+
+  if (zeffyShouldRouteToStudentCampaign(row)) {
+    return zeffyStudentCampaignCheckoutUrl();
+  }
+
+  return zeffyCheckoutUrlForTier(row.registration_type) ?? fallbackCampaignUrl;
 }
