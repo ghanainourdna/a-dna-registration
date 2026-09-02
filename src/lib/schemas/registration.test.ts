@@ -41,7 +41,7 @@ function validBase(
     linkedin_url: '',
     facebook_handle: '',
     other_social: '',
-    registration_type: 'conference_only',
+    registration_type: 'diaspora_nurses_allied_health',
     ...overrides,
   };
 }
@@ -66,7 +66,7 @@ describe('registrationFormSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('requires room_type and occupancy when housing is yes', () => {
+  it('does not require room type or occupancy when housing is yes', () => {
     const result = registrationFormSchema.safeParse(
       validBase({
         needs_housing: 'yes',
@@ -74,86 +74,110 @@ describe('registrationFormSchema', () => {
         occupancy_type: null,
       }),
     );
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const paths = result.error.issues.map((i) => i.path[0]);
-      expect(paths).toContain('room_type');
-      expect(paths).toContain('occupancy_type');
-    }
-  });
-
-  it('does not require room fields when housing is no (even if stale values remain)', () => {
-    const result = registrationFormSchema.safeParse(
-      validBase({
-        needs_housing: 'no',
-        room_type: 'A',
-        occupancy_type: 'single',
-      }),
-    );
     expect(result.success).toBe(true);
   });
 
-  it('passes when housing yes has room and occupancy', () => {
-    const result = registrationFormSchema.safeParse(
+  it('persists housing as disabled even if the form sent yes', () => {
+    const persisted = summarizeForPersistence(
       validBase({
         needs_housing: 'yes',
         room_type: 'B',
         occupancy_type: 'shared',
       }),
     );
-    expect(result.success).toBe(true);
+    expect(persisted.payload.needs_housing).toBe(false);
+    expect(persisted.payload.room_type).toBeNull();
+    expect(persisted.payload.occupancy_type).toBeNull();
+    expect(persisted.payload.housing_amount).toBe(0);
   });
 
-  it('requires student registration tier when is_student is true', () => {
-    const result = registrationFormSchema.safeParse(
+  it('allows reception only for students', () => {
+    expect(
+      registrationFormSchema.safeParse(
+        validBase({ is_student: false, registration_type: 'reception' }),
+      ).success,
+    ).toBe(false);
+    expect(
+      registrationFormSchema.safeParse(
+        validBase({ is_student: true, registration_type: 'reception' }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it('accepts physician and low/moderate-income tiers at the new prices', () => {
+    const physicians = summarizeForPersistence(
+      validBase({ registration_type: 'diaspora_physicians' }),
+    );
+    expect(physicians.payload.registration_amount).toBe(350);
+    expect(physicians.payload.total_amount).toBe(350);
+
+    const lowIncome = summarizeForPersistence(
       validBase({
-        is_student: true,
+        registration_type: 'low_moderate_income_nurses_allied_health',
+      }),
+    );
+    expect(lowIncome.payload.registration_amount).toBe(150);
+    expect(lowIncome.payload.total_amount).toBe(150);
+  });
+
+  it('keeps USA 2026 pricing valid for historical payment reconciliation', () => {
+    const usaConference = summarizeForPersistence(
+      validBase({
+        conference_slug: 'usa-2026',
         registration_type: 'conference_only',
       }),
     );
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(
-        result.error.issues.some((i) => i.path[0] === 'registration_type'),
-      ).toBe(true);
-    }
+    expect(usaConference.payload.registration_amount).toBe(200);
+    expect(usaConference.payload.total_amount).toBe(200);
+
+    const usaStudent = summarizeForPersistence(
+      validBase({
+        conference_slug: 'usa-2026',
+        is_student: true,
+        registration_type: 'student_conference',
+      }),
+    );
+    expect(usaStudent.payload.registration_amount).toBe(100);
+    expect(usaStudent.payload.total_amount).toBe(100);
   });
 
-  it('accepts virtual registration at $100 for students and non-students', () => {
+  it('requires and persists housing details only for housing-enabled conferences', () => {
     expect(
       registrationFormSchema.safeParse(
-        validBase({ registration_type: 'virtual' }),
+        validBase({ conference_slug: 'usa-2026', needs_housing: 'yes' }),
       ).success,
-    ).toBe(true);
-    expect(
-      registrationFormSchema.safeParse(
-        validBase({ is_student: true, registration_type: 'virtual' }),
-      ).success,
-    ).toBe(true);
+    ).toBe(false);
 
     const persisted = summarizeForPersistence(
-      validBase({ registration_type: 'virtual' }),
+      validBase({
+        conference_slug: 'usa-2026',
+        registration_type: 'conference_only',
+        needs_housing: 'yes',
+        room_type: 'A',
+        occupancy_type: 'shared',
+      }),
     );
-    expect(persisted.payload.registration_type).toBe('virtual');
-    expect(persisted.payload.registration_amount).toBe(100);
-    expect(persisted.payload.total_amount).toBe(100);
+    expect(persisted.payload.needs_housing).toBe(true);
+    expect(persisted.payload.housing_amount).toBe(294.34);
+  });
+
+  it('uses the conference database housing setting when it overrides the catalog', () => {
+    const values = validBase({
+      conference_slug: 'ghana-2027',
+      conference_housing_enabled: true,
+      needs_housing: 'yes',
+      room_type: 'A',
+      occupancy_type: 'shared',
+    });
+    expect(registrationFormSchema.safeParse(values).success).toBe(true);
+
+    const persisted = summarizeForPersistence(values, 'ghana-2027', true);
+    expect(persisted.payload.needs_housing).toBe(true);
+    expect(persisted.payload.housing_amount).toBe(294.34);
   });
 });
 
 describe('registrationFieldMessage / validators', () => {
-  it('surfaces housing room errors even when other required fields are empty', () => {
-    const values = validBase({
-      first_name: '',
-      needs_housing: 'yes',
-      room_type: null,
-      occupancy_type: null,
-    });
-    expect(registrationFieldMessage('room_type', values)).toMatch(/room type/i);
-    expect(registrationFieldMessage('occupancy_type', values)).toMatch(
-      /occupancy/i,
-    );
-  });
-
   it('returns heard_about message only for that field', () => {
     const values = validBase({ heard_about_us: [], first_name: '' });
     expect(registrationFieldMessage('heard_about_us', values)).toMatch(
@@ -161,6 +185,16 @@ describe('registrationFieldMessage / validators', () => {
     );
     expect(registrationFieldMessage('first_name', values)).toMatch(/required/i);
     expect(registrationFieldMessage('heard_about_us', validBase())).toBeUndefined();
+  });
+
+  it('surfaces reception student-only error', () => {
+    const values = validBase({
+      is_student: false,
+      registration_type: 'reception',
+    });
+    expect(registrationFieldMessage('registration_type', values)).toMatch(
+      /students only/i,
+    );
   });
 
   it('exposes onChange and onSubmit validators (not onBlur)', () => {

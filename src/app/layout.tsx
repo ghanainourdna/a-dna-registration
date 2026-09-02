@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-/** Display headings only — medium/semibold weights; avoid heavy extrabold for elegance */
+/** Display headings only - medium/semibold weights; avoid heavy extrabold for elegance */
 const playfairDisplay = Playfair_Display({
   variable: "--font-playfair",
   subsets: ["latin"],
@@ -21,9 +21,9 @@ const playfairDisplay = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "A-DNA Global Conference USA 2026 · Registration",
+  title: "A-DNA Ghana Conference 2027 · Registration",
   description:
-    "African-Diaspora Nursing Alliance — Voices of Change: Translating Innovation into Action for Global Health.",
+    "African-Diaspora Nursing Alliance - The Future Of African HealthCare · Diaspora Partnership for sustainable Impact.",
   icons: {
     icon: "/favicon.ico",
   },

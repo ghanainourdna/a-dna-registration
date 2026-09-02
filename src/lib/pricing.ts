@@ -5,16 +5,126 @@ export function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** All ticket types across conferences. Prices are keyed by registration_type. */
 export const REGISTRATION_PRICES_USD = {
+  // USA 2026
   conference_only: 200,
   student_conference: 100,
   reception_only: 100,
   conference_and_reception: 250,
   conference_and_reception_student: 200,
   virtual: 100,
+  // Ghana 2027
+  diaspora_nurses_allied_health: 250,
+  diaspora_physicians: 350,
+  low_moderate_income_nurses_allied_health: 150,
+  reception: 150,
 } as const;
 
 export type RegistrationTier = keyof typeof REGISTRATION_PRICES_USD;
+
+export type ConferenceRegistrationConfig = {
+  housingEnabled: boolean;
+  defaultTier: RegistrationTier;
+  studentDefaultTier: RegistrationTier;
+  tiersWhenStudent: readonly RegistrationTier[];
+  tiersWhenNotStudent: readonly RegistrationTier[];
+};
+
+export const CONFERENCE_REGISTRATION_CONFIG: Record<string, ConferenceRegistrationConfig> = {
+  'ghana-2027': {
+    housingEnabled: false,
+    defaultTier: 'diaspora_nurses_allied_health',
+    studentDefaultTier: 'diaspora_nurses_allied_health',
+    tiersWhenNotStudent: [
+      'diaspora_nurses_allied_health',
+      'diaspora_physicians',
+      'low_moderate_income_nurses_allied_health',
+    ],
+    tiersWhenStudent: [
+      'diaspora_nurses_allied_health',
+      'diaspora_physicians',
+      'low_moderate_income_nurses_allied_health',
+      'reception',
+    ],
+  },
+  'usa-2026': {
+    housingEnabled: true,
+    defaultTier: 'conference_only',
+    studentDefaultTier: 'student_conference',
+    tiersWhenNotStudent: [
+      'conference_only',
+      'reception_only',
+      'conference_and_reception',
+      'virtual',
+    ],
+    tiersWhenStudent: [
+      'student_conference',
+      'conference_and_reception_student',
+      'virtual',
+    ],
+  },
+};
+
+export function hasConferenceRegistrationConfig(
+  conferenceSlug: string | null | undefined,
+): boolean {
+  const slug = conferenceSlug?.trim().toLowerCase() || 'ghana-2027';
+  return Object.hasOwn(CONFERENCE_REGISTRATION_CONFIG, slug);
+}
+
+export function getConferenceRegistrationConfig(
+  conferenceSlug: string | null | undefined,
+): ConferenceRegistrationConfig {
+  const slug = conferenceSlug?.trim().toLowerCase() || 'ghana-2027';
+  const config = CONFERENCE_REGISTRATION_CONFIG[slug];
+  if (!config) {
+    throw new Error(`Registration pricing is not configured for ${slug}.`);
+  }
+  return config;
+}
+
+export function registrationTiersForConference(
+  conferenceSlug: string | null | undefined,
+  isStudent: boolean,
+): RegistrationTier[] {
+  const config = getConferenceRegistrationConfig(conferenceSlug);
+  return [...(isStudent ? config.tiersWhenStudent : config.tiersWhenNotStudent)];
+}
+
+export function isRegistrationTierAllowedForConference(
+  conferenceSlug: string | null | undefined,
+  tier: RegistrationTier,
+  isStudent: boolean,
+): boolean {
+  return registrationTiersForConference(conferenceSlug, isStudent).includes(tier);
+}
+
+/** Tiers shown only after the registrant marks themselves as a student. */
+export function studentOnlyRegistrationTiers(
+  conferenceSlug: string | null | undefined,
+): RegistrationTier[] {
+  const config = getConferenceRegistrationConfig(conferenceSlug);
+  return config.tiersWhenStudent.filter((tier) => !config.tiersWhenNotStudent.includes(tier));
+}
+
+export function isStudentOnlyRegistrationTier(
+  conferenceSlug: string | null | undefined,
+  tier: RegistrationTier,
+): boolean {
+  return studentOnlyRegistrationTiers(conferenceSlug).includes(tier);
+}
+
+export const DEFAULT_REGISTRATION_TIER: RegistrationTier =
+  CONFERENCE_REGISTRATION_CONFIG['ghana-2027']!.defaultTier;
+
+export function defaultRegistrationTierForConference(
+  conferenceSlug: string,
+  isStudent: boolean,
+): RegistrationTier {
+  const config = getConferenceRegistrationConfig(conferenceSlug);
+  return isStudent ? config.studentDefaultTier : config.defaultTier;
+}
 
 export const ROOM_BLOCK = {
   name: 'Residence Inn by Marriott Baltimore at The Johns Hopkins Medical Campus',

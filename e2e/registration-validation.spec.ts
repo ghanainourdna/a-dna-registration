@@ -6,6 +6,9 @@ test.describe('Registration validation interactions', () => {
       waitUntil: 'domcontentloaded',
       timeout: 90_000,
     });
+    await expect(
+      page.locator('nav[aria-label*="Registration progress"][data-nav-ready="true"]'),
+    ).toBeVisible({ timeout: 30_000 });
   });
 
   test('heard-about option toggles update aria-checked and clear required error after submit', async ({
@@ -47,38 +50,14 @@ test.describe('Registration validation interactions', () => {
     ).toHaveCount(0);
   });
 
-  test('housing yes without room shows errors; switching to no clears room requirements', async ({
+  test('housing is disabled and does not require a room selection', async ({
     page,
   }) => {
-    const housing = page.locator('#registration-field-needs_housing');
-    await housing.scrollIntoViewIfNeeded();
-
-    await housing.getByRole('radio', { name: 'Yes' }).click();
-    await expect(page.locator('#registration-field-room_type')).toBeVisible();
-    await expect(
-      page.locator('#registration-field-occupancy_type'),
-    ).toBeVisible();
-
-    await page.locator('#section-payment').scrollIntoViewIfNeeded();
-    await page
-      .locator('#conference-registration-form')
-      .evaluate((form) => {
-        if (form instanceof HTMLFormElement) form.requestSubmit();
-      });
-
-    await expect(
-      page.getByRole('alert').filter({ hasText: /select a room type/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole('alert').filter({ hasText: /occupancy/i }),
-    ).toBeVisible();
-
-    await housing.scrollIntoViewIfNeeded();
-    await housing.getByRole('radio', { name: 'No' }).click();
+    await page.locator('button[data-section-nav="housing"]').click();
+    await expect(page.locator('#section-housing')).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /housing is disabled/i })).toBeVisible();
+    await expect(page.locator('#registration-field-needs_housing')).toHaveCount(0);
     await expect(page.locator('#registration-field-room_type')).toHaveCount(0);
-    await expect(
-      page.locator('#registration-field-occupancy_type'),
-    ).toHaveCount(0);
 
     await page.locator('#section-payment').scrollIntoViewIfNeeded();
     await page
@@ -95,21 +74,50 @@ test.describe('Registration validation interactions', () => {
     ).toHaveCount(0);
   });
 
-  test('student and registration type use button radios', async ({ page }) => {
+  test('registration tiers match Ghana tickets; reception appears for students only', async ({
+    page,
+  }) => {
     const student = page.locator('#registration-field-is_student');
     await student.scrollIntoViewIfNeeded();
     await expect(student.getByRole('radio', { name: 'Yes' })).toBeVisible();
     await expect(student.locator('input[type="radio"]')).toHaveCount(0);
+
+    const tiers = page.locator('#registration-field-registration_type');
+    await tiers.scrollIntoViewIfNeeded();
+    await expect(
+      tiers.getByRole('radio', {
+        name: /Diaspora Nurses, Midwives and Allied Health/i,
+      }),
+    ).toBeVisible();
+    await expect(
+      tiers.getByRole('radio', { name: /Diaspora Physicians/i }),
+    ).toBeVisible();
+    await expect(
+      tiers.getByRole('radio', {
+        name: /Low- and Moderate-Income Nurses, Midwives and Allied Health/i,
+      }),
+    ).toBeVisible();
+    await expect(tiers.getByRole('radio', { name: /Reception/i })).toHaveCount(0);
 
     await student.getByRole('radio', { name: 'Yes' }).click();
     await expect(student.getByRole('radio', { name: 'Yes' })).toHaveAttribute(
       'aria-checked',
       'true',
     );
-
-    const tiers = page.locator('#registration-field-registration_type');
     await tiers.scrollIntoViewIfNeeded();
-    await expect(tiers.getByRole('radio').first()).toBeVisible();
-    await expect(tiers.locator('input[type="radio"]')).toHaveCount(0);
+    await expect(
+      tiers.getByRole('radio', {
+        name: /Diaspora Nurses, Midwives and Allied Health/i,
+      }),
+    ).toBeVisible();
+    await expect(
+      tiers.getByRole('radio', { name: /Diaspora Physicians/i }),
+    ).toBeVisible();
+    await expect(
+      tiers.getByRole('radio', {
+        name: /Low- and Moderate-Income Nurses, Midwives and Allied Health/i,
+      }),
+    ).toBeVisible();
+    await expect(tiers.getByRole('radio', { name: /Reception/i })).toBeVisible();
   });
 });

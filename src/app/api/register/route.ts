@@ -1,6 +1,16 @@
-import { sendRegistrationConfirmationEmail } from '@/lib/email/send-registration-confirmation';
-import { DuplicateRegistrationError, InvalidCountryError } from '@/lib/errors';
-import type { RegistrationTier } from '@/lib/pricing';
+import { requireConferenceBySlug } from '@/lib/conferences';
+import {
+  DuplicateRegistrationError,
+  InvalidConferenceError,
+  InvalidCountryError,
+  InvalidHousingSelectionError,
+  InvalidRegistrationTierError,
+} from '@/lib/errors';
+import {
+  hasConferenceRegistrationConfig,
+  isRegistrationTierAllowedForConference,
+  type RegistrationTier,
+} from '@/lib/pricing';
 import type { RegistrationFormValues } from '@/lib/schemas/registration';
 import { registrationFormSchema, summarizeForPersistence } from '@/lib/schemas/registration';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
@@ -22,17 +32,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
   }
 
+  const conferenceSlug =
+    body && typeof body === 'object' && 'conference_slug' in body && typeof body.conference_slug === 'string'
+      ? body.conference_slug
+      : undefined;
+  if (!hasConferenceRegistrationConfig(conferenceSlug)) {
+    return NextResponse.json({ error: 'Registration is not configured for this conference.' }, { status: 400 });
+  }
+
   const parsed = registrationFormSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: 'Validation failed', issues: parsed.error.flatten() }, { status: 400 });
   }
 
   try {
-    const result = await saveRegistration(parsed.data);
-    await sendRegistrationConfirmationEmail(parsed.data, result);
+    const result = await saveRegistration(parsed.data, conferenceSlug);
     return NextResponse.json(result, { status: result.created ? 201 : 200 });
   } catch (e: unknown) {
-    if (e instanceof InvalidCountryError) {
+    if (
+      e instanceof InvalidCountryError ||
+      e instanceof InvalidConferenceError ||
+      e instanceof InvalidRegistrationTierError ||
+      e instanceof InvalidHousingSelectionError
+    ) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
     if (e instanceof DuplicateRegistrationError) {
@@ -43,9 +65,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function saveRegistration(values: RegistrationFormValues) {
-  const { email, payload } = summarizeForPersistence(values);
-
+async function saveRegistration(values: RegistrationFormValues, conferenceSlug?: string) {
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
     supabase = getSupabaseAdmin();
@@ -59,10 +79,35 @@ async function saveRegistration(values: RegistrationFormValues) {
     throw new InvalidCountryError();
   }
 
+  const { id: conferenceId, conference } = await requireConferenceBySlug(supabase, conferenceSlug);
+  if (
+    !isRegistrationTierAllowedForConference(
+      conference.slug,
+      values.registration_type,
+      values.is_student,
+    )
+  ) {
+    throw new InvalidRegistrationTierError();
+  }
+  if (
+    conference.housing_enabled &&
+    values.needs_housing === 'yes' &&
+    (!values.room_type || !values.occupancy_type)
+  ) {
+    throw new InvalidHousingSelectionError();
+  }
+
+  const { email, payload } = summarizeForPersistence(
+    values,
+    conference.slug,
+    conference.housing_enabled,
+  );
+
   const { data: existing } = await supabase
     .from('conference_registrations')
     .select('id,payment_status')
     .eq('email', email)
+    .eq('conference_id', conferenceId)
     .maybeSingle();
 
   const row = existing as RegistrationRow | null;
@@ -103,6 +148,7 @@ async function saveRegistration(values: RegistrationFormValues) {
     total_amount: payload.total_amount,
     payment_status: 'pending' as const,
     checkout_correlation_reference: null as string | null,
+    conference_id: conferenceId,
   };
 
   if (row) {
@@ -129,7 +175,7 @@ async function saveRegistration(values: RegistrationFormValues) {
 
   if (error) {
     if (error.code === '23505') {
-      return saveRegistration(values);
+      return saveRegistration(values, conferenceSlug);
     }
     throw new Error(error.message);
   }

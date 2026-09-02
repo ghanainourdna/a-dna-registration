@@ -16,10 +16,13 @@ export type RegistrationPaymentRow = {
   total_amount: string | number;
   payment_status: 'pending' | 'paid' | 'failed';
   checkout_correlation_reference: string | null;
+  conference_id: string | null;
+  created_at: string;
+  payment_sync_checked_at?: string | null;
 };
 
 export const REGISTRATION_PAYMENT_ROW_SELECT_PENDING =
-  'id,registration_type,needs_housing,room_type,occupancy_type,payment_status,total_amount,checkout_correlation_reference,registration_amount,housing_amount,email';
+  'id,registration_type,needs_housing,room_type,occupancy_type,payment_status,total_amount,checkout_correlation_reference,registration_amount,housing_amount,email,conference_id,created_at,payment_sync_checked_at';
 
 const UUID_RX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -100,7 +103,7 @@ function filterMatchingAmount(rows: RegistrationPaymentRow[], verifiedAmountCent
   });
 }
 
-/** Correlate webhook payment → pending registration safely (prefer UUID, tie-break checkout token substring). */
+/** Correlate webhook payment → pending registration safely using a UUID or checkout token. */
 export async function resolveRegistrationRowForZeffyWebhook(opts: {
   supabase: SupabaseClient;
   paymentObject: Record<string, unknown>;
@@ -141,24 +144,23 @@ export async function resolveRegistrationRowForZeffyWebhook(opts: {
   const pendingForEmail = await listPendingRegistrationsByEmail(supabase, emailTrim);
   const candidates = filterMatchingAmount(pendingForEmail, verifiedAmountCents);
 
-  if (candidates.length === 1) {
-    return { row: candidates[0]! };
+  const hinted = candidates.filter((r) => {
+    const t = r.checkout_correlation_reference?.trim();
+    return !!t && blob.includes(t);
+  });
+  if (hinted.length === 1) {
+    return { row: hinted[0]! };
   }
-
-  /** Multiple pending registrations for the same email + amount edge case */
-  if (candidates.length > 1) {
-    const hinted = candidates.filter((r) => {
-      const t = r.checkout_correlation_reference?.trim();
-      return !!t && blob.includes(t);
-    });
-
-    if (hinted.length === 1) {
-      return { row: hinted[0]! };
-    }
+  if (hinted.length > 1) {
     return { ambiguous: true };
   }
 
-  return { rejectReason: 'not_found_pending_registration' };
+  return {
+    rejectReason:
+      candidates.length > 0
+        ? 'missing_checkout_correlation'
+        : 'not_found_pending_registration',
+  };
 }
 
 /**
@@ -172,7 +174,15 @@ export async function finalizeRegistrationPaymentForRow(
 ): Promise<
   | { outcome: 'paid'; registrationId: string }
   | { outcome: 'already_paid'; registrationId: string }
-  | { outcome: 'rejected'; reason: 'pricing_mismatch' | 'invalid_total' | 'amount_mismatch' }
+  | {
+      outcome: 'rejected';
+      reason:
+        | 'pricing_mismatch'
+        | 'invalid_total'
+        | 'amount_mismatch'
+        | 'payment_already_used'
+        | 'registration_already_paid';
+    }
   | { outcome: 'db_error'; message: string }
 > {
   const externalId = externalPaymentId.trim();
@@ -197,17 +207,28 @@ export async function finalizeRegistrationPaymentForRow(
     return { outcome: 'already_paid', registrationId: row.id };
   }
 
-  const { error: updError } = await supabase
-    .from('conference_registrations')
-    .update({
-      payment_status: 'paid',
-      checkout_correlation_reference: externalId,
-    })
-    .eq('id', row.id);
-
-  if (updError) {
-    return { outcome: 'db_error', message: updError.message };
+  const { data: outcome, error } = await supabase.rpc(
+    'finalize_zeffy_registration_payment',
+    {
+      p_registration_id: row.id,
+      p_external_payment_id: externalId,
+      p_amount_cents: Math.round(verifiedAmountCents),
+    },
+  );
+  if (error) {
+    return { outcome: 'db_error', message: error.message };
   }
-
-  return { outcome: 'paid', registrationId: row.id };
+  if (outcome === 'paid') {
+    return { outcome: 'paid', registrationId: row.id };
+  }
+  if (outcome === 'already_paid') {
+    return { outcome: 'already_paid', registrationId: row.id };
+  }
+  if (outcome === 'payment_already_used' || outcome === 'registration_already_paid') {
+    return { outcome: 'rejected', reason: outcome };
+  }
+  return {
+    outcome: 'db_error',
+    message: `Payment finalization returned ${String(outcome ?? 'no outcome')}.`,
+  };
 }

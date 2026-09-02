@@ -7,16 +7,17 @@ import {
   motion,
   useReducedMotion,
 } from "framer-motion";
-import Image from "next/image";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
+import { isAfricanCountryCode } from "@/lib/countries/africa";
 import type { CountryOption } from "@/lib/countries/catalog";
 import {
-  HOUSING_DATES_LABEL,
+  DEFAULT_REGISTRATION_TIER,
   HOUSING_RATES_USD,
-  ROOM_BLOCK,
+  defaultRegistrationTierForConference,
+  registrationTiersForConference,
   totalAmountUsd,
   type RoomTypeCode,
 } from "@/lib/pricing";
@@ -62,28 +63,10 @@ const defaultValues: RegistrationFormValues = {
   linkedin_url: "",
   facebook_handle: "",
   other_social: "",
-  registration_type: "conference_only",
+  registration_type: DEFAULT_REGISTRATION_TIER,
+  conference_slug: "ghana-2027",
+  conference_housing_enabled: false,
 };
-
-const TIERS = Object.keys(
-  REGISTRATION_TIER_LABELS,
-) as RegistrationFormValues["registration_type"][];
-
-/** Default tier when the user switches to “Yes” for student. */
-const DEFAULT_STUDENT_REGISTRATION_TYPE: RegistrationFormValues["registration_type"] =
-  "student_conference";
-
-const STUDENT_REGISTRATION_TYPES: RegistrationFormValues["registration_type"][] = [
-  "student_conference",
-  "conference_and_reception_student",
-  "virtual",
-];
-
-/** When not a student, hide discounted student tiers. */
-const NON_STUDENT_REGISTRATION_TYPES = TIERS.filter(
-  (t) =>
-    t !== "student_conference" && t !== "conference_and_reception_student",
-);
 
 const SECTIONS = [
   { id: "personal", title: "Personal Information" },
@@ -217,10 +200,12 @@ function FormSelectChevronDecor({ error }: { error: boolean }) {
 function CountryPickerField({
   countries,
   disabled,
+  defaultScope,
   field,
 }: {
   countries: CountryOption[];
   disabled: boolean;
+  defaultScope: "africa" | "all";
   field: {
     state: {
       value: string | undefined | null;
@@ -233,7 +218,9 @@ function CountryPickerField({
   const errMsg = summarizeFieldErrors(field.state.meta.errors);
   const controlId = registrationControlId("country");
   const searchId = `${controlId}-search`;
+  const scopeGroupId = `${controlId}-scope`;
   const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<"africa" | "all">(defaultScope);
 
   const filteredCountries = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -244,10 +231,15 @@ function CountryPickerField({
       ? countries.find((c) => c.code === selectedCode)
       : undefined;
 
+    const scoped =
+      scope === "africa"
+        ? countries.filter((c) => isAfricanCountryCode(c.code))
+        : countries;
+
     let list =
       q.length === 0
-        ? countries
-        : countries.filter(
+        ? scoped
+        : scoped.filter(
             (c) =>
               c.name.toLowerCase().includes(q) ||
               c.name.toLowerCase().startsWith(q) ||
@@ -260,12 +252,49 @@ function CountryPickerField({
     }
 
     return list;
-  }, [countries, query, field.state.value]);
+  }, [countries, query, scope, field.state.value]);
 
   return (
     <>
       {!disabled ? (
         <div className="mb-2">
+          <p
+            id={scopeGroupId}
+            className="mb-1.5 text-sm font-semibold uppercase tracking-wide text-stone-500"
+          >
+            Country list
+          </p>
+          <div
+            role="radiogroup"
+            aria-labelledby={scopeGroupId}
+            className="mb-3 grid grid-cols-2 gap-1 rounded-xl border border-stone-200/95 bg-stone-50 p-1"
+          >
+            {(
+              [
+                ["africa", "African countries"],
+                ["all", "All countries"],
+              ] as const
+            ).map(([value, label]) => {
+              const selected = scope === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setScope(value)}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-center text-xs font-semibold transition",
+                    selected
+                      ? "bg-white text-emerald-900 shadow-sm ring-1 ring-emerald-200"
+                      : "text-stone-600 hover:text-stone-900",
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
           <label
             htmlFor={searchId}
             className="mb-1 block text-sm font-semibold uppercase tracking-wide text-stone-500"
@@ -372,7 +401,7 @@ function summarizeFieldErrors(
 /** @deprecated Prefer {@link registrationFieldValidators}; kept as a short local alias. */
 const registrationBlurFor = registrationFieldValidators;
 
-/** Touch-safe choice control — avoids iOS/WebKit native radio/checkbox bugs. */
+/** Touch-safe choice control - avoids iOS/WebKit native radio/checkbox bugs. */
 function OptionToggle({
   checked,
   onSelect,
@@ -464,14 +493,13 @@ function FieldFeedback({
   );
 }
 
-function totalsFor(values: RegistrationFormValues) {
-  const tier = values.registration_type;
-  const needs = values.needs_housing === "yes";
+function totalsFor(values: RegistrationFormValues, housingEnabled: boolean) {
+  const needsHousing = housingEnabled && values.needs_housing === "yes";
   return totalAmountUsd({
-    registrationTier: tier,
-    needsHousing: needs,
-    roomType: needs ? (values.room_type ?? undefined) : null,
-    occupancy: needs ? (values.occupancy_type ?? undefined) : null,
+    registrationTier: values.registration_type,
+    needsHousing,
+    roomType: needsHousing ? values.room_type : null,
+    occupancy: needsHousing ? values.occupancy_type : null,
   });
 }
 
@@ -503,49 +531,18 @@ function SummaryUsd({
   );
 }
 
-function HousingRoomRateCard({ code }: { code: RoomTypeCode }) {
-  const r = HOUSING_RATES_USD[code];
-  const rows: { label: string; value: number }[] = [
-    { label: "Per room / night", value: r.perRoomNight },
-    { label: "Per guest / night (sharing)", value: r.perGuestNightShared },
-    {
-      label: `Per guest — full ${r.stayNights}-night stay (sharing)`,
-      value: r.fullStaySharedGuest,
-    },
-  ];
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-stone-200/85 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.05)] ring-1 ring-black/[0.03]">
-      <div className="border-b border-emerald-100/90 bg-gradient-to-br from-emerald-50/95 via-white to-teal-50/30 px-4 py-3.5">
-        <p className="font-sans text-xs font-semibold uppercase tracking-[0.16em] text-emerald-800/90">
-          Rate plan
-        </p>
-        <p className="mt-1 font-sans text-sm font-semibold tracking-tight text-stone-900">
-          Room Type {code}
-        </p>
-      </div>
-      <dl className="divide-y divide-stone-100">
-        {rows.map((row) => (
-          <div
-            key={row.label}
-            className="flex items-baseline justify-between gap-4 px-4 py-3 text-sm"
-          >
-            <dt className="min-w-0 leading-snug text-stone-600">{row.label}</dt>
-            <dd className="shrink-0 text-right font-semibold tabular-nums tracking-tight text-stone-900">
-              ${row.value.toFixed(2)}
-              <span className="sr-only"> USD</span>
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
 export function RegistrationForm({
   countries,
+  conferenceSlug = "ghana-2027",
+  conferenceTitle = "A-DNA Ghana Conference 2027",
+  worldCountry = "africa",
+  housingEnabled = false,
 }: {
   countries: CountryOption[];
+  conferenceSlug?: string;
+  conferenceTitle?: string;
+  worldCountry?: "africa" | "all";
+  housingEnabled?: boolean;
 }) {
   const motionUi = useUiMotion();
   const countryListReady = countries.length > 0;
@@ -557,8 +554,12 @@ export function RegistrationForm({
   } | null>(null);
 
   /** Keeps the active step pill in view as the user scrolls the form (IntersectionObserver updates `activeSection`). */
+  const progressNavRef = useRef<HTMLElement>(null);
   const sectionNavScrollRef = useRef<HTMLDivElement>(null);
   const skipSectionNavScrollOnMount = useRef(true);
+  /** Ignore IO updates while a nav click is scrolling — otherwise mid-scroll the observer resets the step and sticky-pill `scrollIntoView` cancels the jump. */
+  const suppressSectionObserverRef = useRef(false);
+  const sectionObserverResumeTimerRef = useRef<number | null>(null);
 
   const activeIndex = SECTIONS.findIndex((s) => s.id === activeSection);
   const resolvedIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -566,6 +567,28 @@ export function RegistrationForm({
     SECTIONS.length > 0
       ? Math.min(100, ((resolvedIndex + 1) / SECTIONS.length) * 100)
       : 0;
+
+  useEffect(() => {
+    progressNavRef.current?.setAttribute("data-nav-ready", "true");
+  }, []);
+
+  const jumpToSection = (sectionId: string) => {
+    const el = document.getElementById(`section-${sectionId}`);
+    if (!el) return;
+
+    // Instant jumps avoid chained smooth-scroll races (clicking the next pill
+    // while the previous animation is still running cancels the new target).
+    suppressSectionObserverRef.current = true;
+    if (sectionObserverResumeTimerRef.current !== null) {
+      window.clearTimeout(sectionObserverResumeTimerRef.current);
+    }
+    el.scrollIntoView({ behavior: "auto", block: "start" });
+    setActiveSection(sectionId);
+    sectionObserverResumeTimerRef.current = window.setTimeout(() => {
+      suppressSectionObserverRef.current = false;
+      sectionObserverResumeTimerRef.current = null;
+    }, 400);
+  };
 
   useEffect(() => {
     if (skipSectionNavScrollOnMount.current) {
@@ -579,8 +602,14 @@ export function RegistrationForm({
     );
     if (!btn) return;
     const behavior: ScrollBehavior = motionUi.reduced ? "auto" : "smooth";
+    // Scroll only the pill strip — element.scrollIntoView on a sticky child can move the document and fight section jumps.
     requestAnimationFrame(() => {
-      btn.scrollIntoView({ behavior, block: "nearest", inline: "center" });
+      const navRect = nav.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      const delta =
+        btnRect.left + btnRect.width / 2 - (navRect.left + navRect.width / 2);
+      if (Math.abs(delta) < 2) return;
+      nav.scrollBy({ left: delta, behavior });
     });
   }, [activeSection, motionUi.reduced]);
 
@@ -604,6 +633,7 @@ export function RegistrationForm({
 
       io = new IntersectionObserver(
         (entries) => {
+          if (suppressSectionObserverRef.current) return;
           const intersecting = entries.filter((e) => e.isIntersecting);
           if (intersecting.length === 0) return;
           const best = intersecting.reduce((a, b) =>
@@ -626,13 +656,29 @@ export function RegistrationForm({
     return () => {
       narrowMq.removeEventListener("change", connect);
       io?.disconnect();
+      if (sectionObserverResumeTimerRef.current !== null) {
+        window.clearTimeout(sectionObserverResumeTimerRef.current);
+      }
     };
   }, []);
 
+  const initialValues = useMemo<RegistrationFormValues>(
+    () => ({
+      ...defaultValues,
+      registration_type: defaultRegistrationTierForConference(
+        conferenceSlug,
+        false,
+      ),
+      conference_slug: conferenceSlug,
+      conference_housing_enabled: housingEnabled,
+    }),
+    [conferenceSlug, housingEnabled],
+  );
+
   const form = useForm({
-    defaultValues,
+    defaultValues: initialValues,
     // After a failed submit, fields stay invalid until revalidated. Without this,
-    // handleSubmit short-circuits on canSubmit=false and never re-runs validators —
+    // handleSubmit short-circuits on canSubmit=false and never re-runs validators -
     // common on mobile when heard-about selection updates after the first attempt.
     canSubmitWhenInvalid: true,
     validators: {
@@ -655,7 +701,7 @@ export function RegistrationForm({
         const saved = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(parsed),
+          body: JSON.stringify({ ...parsed, conference_slug: conferenceSlug }),
         });
 
         const registerJson = (await saved.json()) as {
@@ -669,7 +715,7 @@ export function RegistrationForm({
             type: "error",
             text:
               registerJson.error ??
-              "You have already registered with this email address.",
+              "You have already registered for this conference with this email address.",
           });
           setStatus("idle");
           return;
@@ -731,8 +777,10 @@ export function RegistrationForm({
     <div className="relative mx-auto grid w-full min-w-0 max-w-[min(115rem,calc(100%-2rem))] gap-8 px-4 pb-24 pt-6 sm:px-6 md:px-10 lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="min-w-0 space-y-8 md:space-y-10">
         <nav
+          ref={progressNavRef}
           className="sticky top-0 z-40 -mx-4 border-b border-stone-200/80 bg-[#f6f7f9]/98 px-4 pb-4 pt-3 shadow-[0_6px_12px_-8px_rgba(15,23,42,0.12)] backdrop-blur-md supports-[backdrop-filter]:bg-[#f6f7f9]/90 sm:-mx-6 sm:px-6 md:-mx-10 md:px-10"
           aria-label="Registration progress and section navigation"
+          data-nav-ready="false"
         >
           <div className="mb-3">
             <div className="min-w-0 flex-1">
@@ -785,12 +833,7 @@ export function RegistrationForm({
                   key={s.id}
                   type="button"
                   data-section-nav={s.id}
-                  onClick={() => {
-                    document
-                      .getElementById(`section-${s.id}`)
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    setActiveSection(s.id);
-                  }}
+                  onClick={() => jumpToSection(s.id)}
                   whileHover={motionUi.reduced ? undefined : { y: -1 }}
                   whileTap={motionUi.reduced ? undefined : { scale: 0.985 }}
                   transition={motionUi.micro}
@@ -1061,22 +1104,17 @@ export function RegistrationForm({
                                 field.handleChange(val);
                                 const tier =
                                   form.getFieldValue("registration_type");
-                                if (val) {
-                                  if (
-                                    !STUDENT_REGISTRATION_TYPES.includes(tier)
-                                  ) {
-                                    form.setFieldValue(
-                                      "registration_type",
-                                      DEFAULT_STUDENT_REGISTRATION_TYPE,
-                                    );
-                                  }
-                                } else if (
-                                  tier === "student_conference" ||
-                                  tier === "conference_and_reception_student"
-                                ) {
+                                const allowed = registrationTiersForConference(
+                                  conferenceSlug,
+                                  val,
+                                );
+                                if (!allowed.includes(tier)) {
                                   form.setFieldValue(
                                     "registration_type",
-                                    "conference_only",
+                                    defaultRegistrationTierForConference(
+                                      conferenceSlug,
+                                      val,
+                                    ),
                                   );
                                 }
                               }}
@@ -1126,6 +1164,7 @@ export function RegistrationForm({
                     <CountryPickerField
                       countries={countries}
                       disabled={!countryListReady}
+                      defaultScope={worldCountry}
                       field={{
                         state: field.state,
                         handleBlur: field.handleBlur,
@@ -1332,223 +1371,169 @@ export function RegistrationForm({
           <Section
             id="housing"
             title="Housing"
-            subtitle="Optional room block at the host hotel."
+            subtitle={
+              housingEnabled
+                ? "Optional room block for conference attendees."
+                : "Not available for this conference."
+            }
           >
-            <div className="overflow-hidden rounded-2xl border border-emerald-200/65 bg-white text-sm text-stone-800 shadow-[0_10px_40px_-14px_rgba(15,80,65,0.18)] ring-1 ring-black/[0.04]">
-              <div className="relative aspect-[16/10] min-h-[180px] w-full md:aspect-[21/9] md:max-h-[280px]">
-                <Image
-                  src={ROOM_BLOCK.imageSrc}
-                  alt={`${ROOM_BLOCK.name} — hotel facade near Johns Hopkins`}
-                  fill
-                  sizes="(max-width: 1024px) 100vw, min(792px, 66vw)"
-                  className="object-cover object-center"
-                />
-                <div
-                  className="pointer-events-none absolute inset-0 bg-gradient-to-t from-stone-900/55 via-transparent to-transparent md:from-stone-900/25"
-                  aria-hidden
-                />
-              </div>
-
-              <div className="space-y-6 p-5 md:p-7">
-                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-stone-100 pb-6">
-                  <div className="min-w-0 space-y-3">
-                    <p className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-900">
-                      Room block
-                    </p>
-                    <div>
-                      <h3 className="font-sans text-lg font-semibold leading-snug tracking-tight text-stone-900 md:text-xl">
-                        {ROOM_BLOCK.name}
-                      </h3>
-                      <p className="mt-3 border-l-[3px] border-emerald-500/65 pl-3 text-sm leading-relaxed text-stone-600">
-                        {ROOM_BLOCK.address}
-                      </p>
-                    </div>
-                  </div>
+            {housingEnabled ? (
+              <div className="space-y-5">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {(Object.keys(HOUSING_RATES_USD) as RoomTypeCode[]).map(
+                    (room) => {
+                      const rate = HOUSING_RATES_USD[room];
+                      return (
+                        <div
+                          key={room}
+                          className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm"
+                        >
+                          <p className="font-semibold text-stone-900">
+                            Room Type {room}
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-stone-600">
+                            {rate.stayNights} nights · ${rate.fullStaySingle.toFixed(2)} single
+                            <br />${rate.fullStaySharedGuest.toFixed(2)} per guest sharing
+                          </p>
+                        </div>
+                      );
+                    },
+                  )}
                 </div>
 
-                <blockquote className="rounded-xl border border-stone-200/90 bg-stone-50/80 px-4 py-3 text-sm leading-relaxed text-stone-700 md:px-5">
-                  Rooms are first-come, first-served for{" "}
-                  <strong> {HOUSING_DATES_LABEL} </strong> (Types A and C: 3
-                  nights; Type B: 2 nights). Studio suites include 1&nbsp;King bed
-                  and a sofa bed (up to 2 adults).
-                </blockquote>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {(
-                    Object.keys(HOUSING_RATES_USD) as RoomTypeCode[]
-                  ).map((code) => (
-                    <HousingRoomRateCard key={code} code={code} />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <Label required>Do you need housing?</Label>
-              <form.Field
-                name="needs_housing"
-                validators={registrationBlurFor("needs_housing")}
-              >
-                {(field) => {
-                  const errMsg = summarizeFieldErrors(field.state.meta.errors);
-                  return (
-                    <>
+                <div>
+                  <Label required>Do you need housing?</Label>
+                  <form.Field
+                    name="needs_housing"
+                    validators={registrationBlurFor("needs_housing")}
+                  >
+                    {(field) => (
                       <div
                         id={registrationControlId("needs_housing")}
                         role="radiogroup"
-                        aria-required="true"
-                        aria-invalid={errMsg ? true : undefined}
-                        aria-describedby={
-                          errMsg
-                            ? registrationFeedbackId("needs_housing")
-                            : undefined
-                        }
-                        className={cn(
-                          "flex flex-wrap gap-4 rounded-lg text-sm",
-                          errMsg && "outline outline-red-400/70",
-                        )}
+                        className="mt-2 flex flex-wrap gap-3"
                       >
-                        {(["yes", "no"] as const).map((opt) => (
+                        {(["yes", "no"] as const).map((value) => (
                           <OptionToggle
-                            key={opt}
-                            checked={field.state.value === opt}
+                            key={value}
+                            checked={field.state.value === value}
                             onSelect={() => {
-                              field.handleChange(opt);
-                              if (opt === "no") {
+                              field.handleChange(value);
+                              if (value === "no") {
                                 form.setFieldValue("room_type", null);
                                 form.setFieldValue("occupancy_type", null);
                               }
                             }}
                           >
-                            {opt === "yes" ? "Yes" : "No"}
+                            {value === "yes" ? "Yes" : "No"}
                           </OptionToggle>
                         ))}
                       </div>
-                      <FieldFeedback
-                        meta={field.state.meta}
-                        id={registrationFeedbackId("needs_housing")}
-                      />
-                    </>
-                  );
-                }}
-              </form.Field>
+                    )}
+                  </form.Field>
+                </div>
 
-              <form.Subscribe selector={(s) => s.values.needs_housing}>
-                {(h) =>
-                  h === "yes" ? (
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <Label required>Room type</Label>
-                        <form.Field
-                          name="room_type"
-                          validators={registrationBlurFor("room_type", [
-                            "needs_housing",
-                          ])}
-                        >
-                          {(rf) => {
-                            const errMsg = summarizeFieldErrors(
-                              rf.state.meta.errors,
-                            );
-                            return (
-                              <>
-                                <div
-                                  id={registrationControlId("room_type")}
-                                  role="radiogroup"
-                                  aria-required="true"
-                                  aria-invalid={errMsg ? true : undefined}
-                                  aria-describedby={
-                                    errMsg
-                                      ? registrationFeedbackId("room_type")
-                                      : undefined
-                                  }
-                                  className={cn(
-                                    "space-y-2",
-                                    errMsg &&
-                                      "rounded-lg outline outline-red-400/70",
-                                  )}
-                                >
-                                  {(Object.keys(HOUSING_RATES_USD) as RoomTypeCode[]).map(
-                                    (room) => (
+                <form.Subscribe selector={(state) => state.values.needs_housing}>
+                  {(needsHousing) =>
+                    needsHousing === "yes" ? (
+                      <div className="grid gap-5 md:grid-cols-2">
+                        <div>
+                          <Label required>Room type</Label>
+                          <form.Field
+                            name="room_type"
+                            validators={registrationBlurFor("room_type", [
+                              "needs_housing",
+                            ])}
+                          >
+                            {(field) => {
+                              const errMsg = summarizeFieldErrors(field.state.meta.errors);
+                              return (
+                                <>
+                                  <div
+                                    id={registrationControlId("room_type")}
+                                    role="radiogroup"
+                                    aria-invalid={errMsg ? true : undefined}
+                                    className={cn(
+                                      "mt-2 space-y-2",
+                                      errMsg && "rounded-lg outline outline-red-400/70",
+                                    )}
+                                  >
+                                    {(Object.keys(HOUSING_RATES_USD) as RoomTypeCode[]).map(
+                                      (room) => (
+                                        <OptionToggle
+                                          key={room}
+                                          checked={field.state.value === room}
+                                          className="w-full"
+                                          onSelect={() => field.handleChange(room)}
+                                        >
+                                          Room Type {room}
+                                        </OptionToggle>
+                                      ),
+                                    )}
+                                  </div>
+                                  <FieldFeedback meta={field.state.meta} />
+                                </>
+                              );
+                            }}
+                          </form.Field>
+                        </div>
+                        <div>
+                          <Label required>Occupancy</Label>
+                          <form.Field
+                            name="occupancy_type"
+                            validators={registrationBlurFor("occupancy_type", [
+                              "needs_housing",
+                            ])}
+                          >
+                            {(field) => {
+                              const errMsg = summarizeFieldErrors(field.state.meta.errors);
+                              return (
+                                <>
+                                  <div
+                                    id={registrationControlId("occupancy_type")}
+                                    role="radiogroup"
+                                    aria-invalid={errMsg ? true : undefined}
+                                    className={cn(
+                                      "mt-2 space-y-2",
+                                      errMsg && "rounded-lg outline outline-red-400/70",
+                                    )}
+                                  >
+                                    {(
+                                      [
+                                        ["single", "Single occupancy"],
+                                        ["shared", "Shared occupancy"],
+                                      ] as const
+                                    ).map(([value, label]) => (
                                       <OptionToggle
-                                        key={room}
-                                        checked={rf.state.value === room}
-                                        className="w-full text-sm text-stone-800"
-                                        onSelect={() => rf.handleChange(room)}
+                                        key={value}
+                                        checked={field.state.value === value}
+                                        className="w-full"
+                                        onSelect={() => field.handleChange(value)}
                                       >
-                                        Room Type {room}
+                                        {label}
                                       </OptionToggle>
-                                    ),
-                                  )}
-                                </div>
-                                <FieldFeedback
-                                  meta={rf.state.meta}
-                                  id={registrationFeedbackId("room_type")}
-                                />
-                              </>
-                            );
-                          }}
-                        </form.Field>
+                                    ))}
+                                  </div>
+                                  <FieldFeedback meta={field.state.meta} />
+                                </>
+                              );
+                            }}
+                          </form.Field>
+                        </div>
                       </div>
-                      <div>
-                        <Label required>Occupancy</Label>
-                        <form.Field
-                          name="occupancy_type"
-                          validators={registrationBlurFor("occupancy_type", [
-                            "needs_housing",
-                          ])}
-                        >
-                          {(of) => {
-                            const errMsg = summarizeFieldErrors(
-                              of.state.meta.errors,
-                            );
-                            return (
-                              <>
-                                <div
-                                  id={registrationControlId("occupancy_type")}
-                                  role="radiogroup"
-                                  aria-required="true"
-                                  aria-invalid={errMsg ? true : undefined}
-                                  aria-describedby={
-                                    errMsg
-                                      ? registrationFeedbackId("occupancy_type")
-                                      : undefined
-                                  }
-                                  className={cn(
-                                    "space-y-2",
-                                    errMsg &&
-                                      "rounded-lg outline outline-red-400/70",
-                                  )}
-                                >
-                                  {(
-                                    [
-                                      ["single", "Single occupancy"],
-                                      ["shared", "Shared occupancy"],
-                                    ] as const
-                                  ).map(([val, lbl]) => (
-                                    <OptionToggle
-                                      key={val}
-                                      checked={of.state.value === val}
-                                      className="w-full text-sm text-stone-800"
-                                      onSelect={() => of.handleChange(val)}
-                                    >
-                                      {lbl}
-                                    </OptionToggle>
-                                  ))}
-                                </div>
-                                <FieldFeedback
-                                  meta={of.state.meta}
-                                  id={registrationFeedbackId("occupancy_type")}
-                                />
-                              </>
-                            );
-                          }}
-                        </form.Field>
-                      </div>
-                    </div>
-                  ) : null
-                }
-              </form.Subscribe>
-            </div>
+                    ) : null
+                  }
+                </form.Subscribe>
+              </div>
+            ) : (
+              <div
+                className="rounded-2xl border border-stone-200/90 bg-stone-50/80 px-5 py-4 text-sm leading-relaxed text-stone-600"
+                role="status"
+              >
+                Housing is disabled. A hotel room block is not offered with this
+                registration. You can continue without selecting a room.
+              </div>
+            )}
           </Section>
 
           <Section
@@ -1557,7 +1542,7 @@ export function RegistrationForm({
             subtitle="Select all that apply."
           >
             <Label required className="mb-3 block">
-              How did you hear about A-DNA Global Conference USA 2026?
+              How did you hear about {conferenceTitle}?
             </Label>
             <form.Field
               name="heard_about_us"
@@ -1696,7 +1681,7 @@ export function RegistrationForm({
           <Section
             id="payment"
             title="Payment"
-            subtitle="Choose one registration type per attendee—you cannot combine multiple ticket types in a single registration."
+            subtitle="Choose one registration type per attendee. You cannot combine multiple ticket types in a single registration. Reception is available when you select student status."
           >
             <div className="space-y-3">
               <Label required className="mb-2 block">
@@ -1714,9 +1699,10 @@ export function RegistrationForm({
                       const errMsg = summarizeFieldErrors(
                         field.state.meta.errors,
                       );
-                      const tierOptions = isStudent
-                        ? STUDENT_REGISTRATION_TYPES
-                        : NON_STUDENT_REGISTRATION_TYPES;
+                      const tierOptions = registrationTiersForConference(
+                        conferenceSlug,
+                        isStudent,
+                      );
                       return (
                         <>
                           <div
@@ -1752,6 +1738,11 @@ export function RegistrationForm({
                                   <span className="block font-semibold text-stone-900">
                                     {meta.label}
                                   </span>
+                                  {meta.note ? (
+                                    <span className="mt-1 block text-xs font-normal text-stone-500">
+                                      {meta.note}
+                                    </span>
+                                  ) : null}
                                 </OptionToggle>
                               );
                             })}
@@ -1776,7 +1767,7 @@ export function RegistrationForm({
                     after the countries catalog loads.
                   </p>
                 ) : (
-                  <p>You will securely pay via Zeffy in the next step.</p>
+                  <p>You will securely pay via Zeffy in the next step. A confirmation email is sent after payment succeeds.</p>
                 )}
               </div>
               <motion.button
@@ -1812,14 +1803,7 @@ export function RegistrationForm({
       <aside className="min-w-0 w-full max-w-full lg:sticky lg:top-6 lg:max-w-none lg:self-start">
         <form.Subscribe selector={(state) => state.values}>
           {(vals) => {
-            const t = totalsFor(vals as RegistrationFormValues);
-
-            const housingLine =
-              vals.needs_housing === "yes" &&
-              vals.room_type &&
-              vals.occupancy_type
-                ? `Housing (${vals.room_type}, ${vals.occupancy_type})`
-                : "Housing";
+            const t = totalsFor(vals as RegistrationFormValues, housingEnabled);
 
             return (
               <LayoutGroup>
@@ -1840,30 +1824,17 @@ export function RegistrationForm({
                         className="shrink-0 font-semibold tabular-nums"
                       />
                     </div>
-                    <AnimatePresence initial={false}>
-                      {vals.needs_housing === "yes" ? (
-                        <motion.div
-                          key="housing-line"
-                          layout
-                          initial={motionUi.reduced ? false : { opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={motionUi.reduced ? undefined : { opacity: 0 }}
-                          transition={motionUi.fade}
-                          className="flex min-w-0 justify-between gap-3 border-t border-dashed border-stone-200 pt-3"
-                        >
-                          <span className="min-w-0 shrink pr-2 text-left leading-snug">
-                            {housingLine}
-                            <span className="mt-0.5 block text-xs font-normal text-stone-500">
-                              Estimated — not included in total due
-                            </span>
-                          </span>
-                          <SummaryUsd
-                            amount={t.housingAmount}
-                            className="shrink-0 font-semibold tabular-nums text-stone-600"
-                          />
-                        </motion.div>
-                      ) : null}
-                    </AnimatePresence>
+                    {t.housingAmount > 0 ? (
+                      <div className="flex min-w-0 justify-between gap-3">
+                        <span className="min-w-0 shrink pr-2 leading-snug">
+                          Housing estimate (billed separately)
+                        </span>
+                        <SummaryUsd
+                          amount={t.housingAmount}
+                          className="shrink-0 font-semibold tabular-nums"
+                        />
+                      </div>
+                    ) : null}
                     <motion.div
                       layout
                       className="flex min-w-0 justify-between gap-3 border-t border-stone-200 pt-3 text-sm font-semibold tabular-nums text-emerald-900"
@@ -1875,9 +1846,8 @@ export function RegistrationForm({
                     </motion.div>
                   </div>
                   <p className="mt-4 text-xs leading-relaxed text-stone-500">
-                    Total due is conference registration only. Housing estimates
-                    are for planning; hotel charges are arranged separately.
-                    Registration payment is finalized on your Zeffy receipt.
+                    Total due is conference registration only. Registration
+                    payment is finalized on your Zeffy receipt.
                   </p>
                 </motion.div>
               </LayoutGroup>
@@ -1896,13 +1866,13 @@ export function RegistrationForm({
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-stone-200 bg-white/95 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom,0px))] shadow-[0_-8px_24px_rgba(0,0,0,0.06)] backdrop-blur lg:hidden">
         <form.Subscribe selector={(state) => state.values}>
           {(vals) => {
-            const t = totalsFor(vals as RegistrationFormValues);
+            const t = totalsFor(vals as RegistrationFormValues, housingEnabled);
             return (
               <div className="mx-auto flex min-w-0 w-full max-w-[min(115rem,100%)] items-center justify-between gap-2 sm:gap-4 md:gap-6">
                 <div className="min-w-0 pr-2">
                   {!countryListReady ? (
                     <p className="text-xs font-medium text-red-800" role="status">
-                      Countries unavailable — refresh to enable payment.
+                      Countries unavailable - refresh to enable payment.
                     </p>
                   ) : (
                     <>
@@ -1970,7 +1940,7 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={`section-${id}`} className="scroll-mt-36">
+    <section id={`section-${id}`} className="scroll-mt-52">
       <div className="relative overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.08)] ring-1 ring-stone-950/[0.03] md:rounded-[1.35rem]">
         <div className="flex h-2.5 shrink-0" aria-hidden role="presentation">
           <span className="flex-1 bg-red-800" />

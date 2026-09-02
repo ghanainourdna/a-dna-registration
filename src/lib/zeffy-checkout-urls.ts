@@ -1,6 +1,6 @@
 import type { RegistrationTier } from '@/lib/pricing';
 
-/** Default Zeffy ticketing page for student registrants (overridable via env). */
+/** Default Zeffy ticketing page for USA 2026 student registrants (overridable via env). */
 export const ZEFFY_STUDENT_TICKETING_DEFAULT =
   'https://www.zeffy.com/en-US/ticketing/a-dna-global-conference-usa-2026-students';
 
@@ -20,8 +20,16 @@ export function zeffyShouldRouteToStudentCampaign(row: {
   is_student: boolean;
   registration_type: RegistrationTier;
 }): boolean {
-  // Virtual has its own checkout (`ZEFFY_CHECKOUT_URL_VIRTUAL`) for students and non-students.
   if (row.registration_type === 'virtual') return false;
+  if (
+    row.registration_type !== 'student_conference' &&
+    row.registration_type !== 'conference_and_reception_student' &&
+    row.registration_type !== 'conference_only' &&
+    row.registration_type !== 'reception_only' &&
+    row.registration_type !== 'conference_and_reception'
+  ) {
+    return false;
+  }
   if (row.is_student) return true;
   return (
     row.registration_type === 'student_conference' ||
@@ -42,6 +50,11 @@ const TIER_ENV_KEYS: Record<RegistrationTier, string> = {
   conference_and_reception: 'ZEFFY_CHECKOUT_URL_CONFERENCE_AND_RECEPTION',
   conference_and_reception_student: 'ZEFFY_CHECKOUT_URL_CONFERENCE_AND_RECEPTION_STUDENT',
   virtual: 'ZEFFY_CHECKOUT_URL_VIRTUAL',
+  diaspora_nurses_allied_health: 'ZEFFY_CHECKOUT_URL_DIASPORA_NURSES_ALLIED_HEALTH',
+  diaspora_physicians: 'ZEFFY_CHECKOUT_URL_DIASPORA_PHYSICIANS',
+  low_moderate_income_nurses_allied_health:
+    'ZEFFY_CHECKOUT_URL_LOW_MODERATE_INCOME_NURSES_ALLIED_HEALTH',
+  reception: 'ZEFFY_CHECKOUT_URL_RECEPTION',
 };
 
 export function zeffyCheckoutUrlForTier(tier: RegistrationTier): string | undefined {
@@ -52,12 +65,12 @@ export function zeffyCheckoutUrlForTier(tier: RegistrationTier): string | undefi
 
 /**
  * Hosted checkout URL for a saved registration.
- * Virtual always uses the virtual tier URL (or the generic campaign fallback), even when the
- * registrant is a student — the student conference campaign is in-person only.
+ * USA student tickets use the student campaign. Virtual uses its own URL.
+ * Ghana (and other) tiers use an optional per-tier URL, then the conference campaign fallback.
  */
 export function resolveZeffyCheckoutBaseUrl(
   row: {
-    is_student: boolean;
+    is_student?: boolean;
     registration_type: RegistrationTier;
   },
   fallbackCampaignUrl: string,
@@ -66,7 +79,13 @@ export function resolveZeffyCheckoutBaseUrl(
     return zeffyCheckoutUrlForTier('virtual') ?? fallbackCampaignUrl;
   }
 
-  if (zeffyShouldRouteToStudentCampaign(row)) {
+  if (
+    row.is_student !== undefined &&
+    zeffyShouldRouteToStudentCampaign({
+      is_student: row.is_student,
+      registration_type: row.registration_type,
+    })
+  ) {
     return zeffyStudentCampaignCheckoutUrl();
   }
 

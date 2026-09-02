@@ -47,6 +47,7 @@ function SuccessContent() {
   const [state, setState] = useState<VerifyState>({ status: 'loading' });
 
   useEffect(() => {
+    let cancelled = false;
     let registrationId = fromQuery;
     try {
       if (!registrationId) {
@@ -60,17 +61,24 @@ function SuccessContent() {
     }
 
     if (!registrationId) {
-      setState({
-        status: 'error',
-        message:
-          'Missing registration confirmation. Complete payment on Zeffy, then return using the link shown after checkout or reopen this tab from your registration confirmation email.',
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setState({
+            status: 'error',
+            message:
+              'Missing registration confirmation. Complete payment on Zeffy, then return using the link shown after checkout.',
+          });
+        }
       });
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
-    setRegistrationIdDisplay(registrationId);
+    queueMicrotask(() => {
+      if (!cancelled) setRegistrationIdDisplay(registrationId);
+    });
 
-    let cancelled = false;
     let attempt = 0;
     const maxAttempts = 12;
     const delayMs = 2500;
@@ -135,7 +143,7 @@ function SuccessContent() {
         return;
       }
 
-      /** Unexpected payload — retry briefly in case schemas changed */
+      /** Unexpected payload - retry briefly in case schemas changed */
       if (attempt < maxAttempts) {
         window.setTimeout(poll, delayMs);
         setState({ status: 'pending', triesLeft: maxAttempts - attempt, reason: 'unexpected_response_retrying' });
@@ -170,10 +178,10 @@ function SuccessContent() {
     ) : state.status === 'success' ? (
       <div className="space-y-4 text-sm text-stone-700">
         <p className="text-emerald-800">
-          Payment confirmed — thank you! Your seat (and housing where selected) will be finalized by the registrar.
+          Payment confirmed. Thank you! Your seat will be finalized by the registrar.
         </p>
         <p>
-          Detailed logistics for the Johns Hopkins gathering will arrive by email shortly. Reach out anytime at{' '}
+          A confirmation email is on its way. Detailed logistics for the gathering will follow. Reach out anytime at{' '}
           <a className="text-emerald-700 underline underline-offset-2" href="mailto:info@g-dna.org">
             info@g-dna.org
           </a>
@@ -209,12 +217,12 @@ function SuccessContent() {
         >
           Registration form
         </Link>
-        <a
+        <Link
           href="/"
           className="inline-flex rounded-full border border-stone-200 px-5 py-2 text-sm font-medium text-stone-800 hover:border-emerald-300"
         >
           Home
-        </a>
+        </Link>
       </div>
     </div>
   );
