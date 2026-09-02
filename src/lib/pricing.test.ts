@@ -25,8 +25,18 @@ describe('conference registration tiers', () => {
   });
 
   it('enforces each conference student catalog', () => {
+    expect(registrationTiersForConference('ghana-2027', true)).toEqual(['reception']);
+    expect(registrationTiersForConference('ghana-2027', false)).not.toContain('reception');
     expect(isRegistrationTierAllowedForConference('ghana-2027', 'reception', true)).toBe(true);
     expect(isRegistrationTierAllowedForConference('ghana-2027', 'reception', false)).toBe(false);
+    expect(
+      isRegistrationTierAllowedForConference(
+        'ghana-2027',
+        'diaspora_nurses_allied_health',
+        true,
+      ),
+    ).toBe(false);
+    expect(defaultRegistrationTierForConference('ghana-2027', true)).toBe('reception');
     expect(isRegistrationTierAllowedForConference('usa-2026', 'student_conference', true)).toBe(true);
     expect(isRegistrationTierAllowedForConference('usa-2026', 'student_conference', false)).toBe(false);
     expect(defaultRegistrationTierForConference('usa-2026', true)).toBe('student_conference');

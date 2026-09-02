@@ -35,18 +35,13 @@ export const CONFERENCE_REGISTRATION_CONFIG: Record<string, ConferenceRegistrati
   'ghana-2027': {
     housingEnabled: false,
     defaultTier: 'diaspora_nurses_allied_health',
-    studentDefaultTier: 'diaspora_nurses_allied_health',
+    studentDefaultTier: 'reception',
     tiersWhenNotStudent: [
       'diaspora_nurses_allied_health',
       'diaspora_physicians',
       'low_moderate_income_nurses_allied_health',
     ],
-    tiersWhenStudent: [
-      'diaspora_nurses_allied_health',
-      'diaspora_physicians',
-      'low_moderate_income_nurses_allied_health',
-      'reception',
-    ],
+    tiersWhenStudent: ['reception'],
   },
   'usa-2026': {
     housingEnabled: true,

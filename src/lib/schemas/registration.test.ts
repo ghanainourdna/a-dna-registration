@@ -91,7 +91,7 @@ describe('registrationFormSchema', () => {
     expect(persisted.payload.housing_amount).toBe(0);
   });
 
-  it('allows reception only for students', () => {
+  it('allows reception only for students, and students may only choose reception', () => {
     expect(
       registrationFormSchema.safeParse(
         validBase({ is_student: false, registration_type: 'reception' }),
@@ -102,6 +102,14 @@ describe('registrationFormSchema', () => {
         validBase({ is_student: true, registration_type: 'reception' }),
       ).success,
     ).toBe(true);
+    expect(
+      registrationFormSchema.safeParse(
+        validBase({
+          is_student: true,
+          registration_type: 'diaspora_nurses_allied_health',
+        }),
+      ).success,
+    ).toBe(false);
   });
 
   it('accepts physician and low/moderate-income tiers at the new prices', () => {
