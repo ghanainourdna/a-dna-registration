@@ -104,6 +104,17 @@ export function isStudentOnlyRegistrationTier(
   return studentOnlyRegistrationTiers(conferenceSlug).includes(tier);
 }
 
+export const DEFAULT_REGISTRATION_TIER: RegistrationTier =
+  CONFERENCE_REGISTRATION_CONFIG['ghana-2027']!.defaultTier;
+
+export function defaultRegistrationTierForConference(
+  conferenceSlug: string,
+  isStudent: boolean,
+): RegistrationTier {
+  const config = getConferenceRegistrationConfig(conferenceSlug);
+  return isStudent ? config.studentDefaultTier : config.defaultTier;
+}
+
 export const ROOM_BLOCK = {
   name: 'Residence Inn by Marriott Baltimore at The Johns Hopkins Medical Campus',
   address: '800 N Wolfe St, Baltimore, MD 21205',

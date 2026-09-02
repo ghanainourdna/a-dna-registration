@@ -119,6 +119,47 @@ describe('registrationFormSchema', () => {
     expect(lowIncome.payload.registration_amount).toBe(150);
     expect(lowIncome.payload.total_amount).toBe(150);
   });
+
+  it('keeps USA 2026 pricing valid for historical payment reconciliation', () => {
+    const usaConference = summarizeForPersistence(
+      validBase({
+        conference_slug: 'usa-2026',
+        registration_type: 'conference_only',
+      }),
+    );
+    expect(usaConference.payload.registration_amount).toBe(200);
+    expect(usaConference.payload.total_amount).toBe(200);
+
+    const usaStudent = summarizeForPersistence(
+      validBase({
+        conference_slug: 'usa-2026',
+        is_student: true,
+        registration_type: 'student_conference',
+      }),
+    );
+    expect(usaStudent.payload.registration_amount).toBe(100);
+    expect(usaStudent.payload.total_amount).toBe(100);
+  });
+
+  it('requires and persists housing details only for housing-enabled conferences', () => {
+    expect(
+      registrationFormSchema.safeParse(
+        validBase({ conference_slug: 'usa-2026', needs_housing: 'yes' }),
+      ).success,
+    ).toBe(false);
+
+    const persisted = summarizeForPersistence(
+      validBase({
+        conference_slug: 'usa-2026',
+        registration_type: 'conference_only',
+        needs_housing: 'yes',
+        room_type: 'A',
+        occupancy_type: 'shared',
+      }),
+    );
+    expect(persisted.payload.needs_housing).toBe(true);
+    expect(persisted.payload.housing_amount).toBe(294.34);
+  });
 });
 
 describe('registrationFieldMessage / validators', () => {

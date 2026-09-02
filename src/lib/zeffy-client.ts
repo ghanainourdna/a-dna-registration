@@ -179,8 +179,28 @@ function coerceCursorEnvelope(envelope: unknown): {
   return { items, nextCursor: nextCursor ?? null, hasMore };
 }
 
-export async function zeffyListRecentSucceededUsdPayments(limitPages = 8): Promise<Record<string, unknown>[]> {
-  const campaignId = process.env.ZEFFY_CAMPAIGN_ID?.trim();
+export type ZeffyPaymentListScope = {
+  campaignId?: string | null;
+  createdGteUnix?: number;
+};
+
+function addPaymentScopeFilters(
+  filters: Record<string, string>,
+  scope: ZeffyPaymentListScope,
+): void {
+  const campaignId = scope.campaignId?.trim();
+  if (campaignId) {
+    filters.campaign = campaignId;
+  }
+  if (typeof scope.createdGteUnix === 'number' && Number.isFinite(scope.createdGteUnix)) {
+    filters['created[gte]'] = String(Math.max(0, Math.trunc(scope.createdGteUnix)));
+  }
+}
+
+export async function zeffyListRecentSucceededUsdPayments(
+  scope: ZeffyPaymentListScope = {},
+  limitPages = 8,
+): Promise<Record<string, unknown>[]> {
   const collected: Record<string, unknown>[] = [];
 
   /** Try contact-scoped pagination first returns nothing - caller may filter broadly */
@@ -189,9 +209,7 @@ export async function zeffyListRecentSucceededUsdPayments(limitPages = 8): Promi
     status: 'succeeded',
     limit: '100',
   };
-  if (campaignId) {
-    baseFilters.campaign = campaignId;
-  }
+  addPaymentScopeFilters(baseFilters, scope);
 
   let cursor: string | undefined;
 
@@ -248,7 +266,10 @@ export async function zeffyFindContactIdByEmail(email: string): Promise<string |
   return null;
 }
 
-export async function zeffyListPaymentsForContact(contactId: string): Promise<Record<string, unknown>[]> {
+export async function zeffyListPaymentsForContact(
+  contactId: string,
+  scope: ZeffyPaymentListScope = {},
+): Promise<Record<string, unknown>[]> {
   const collected: Record<string, unknown>[] = [];
   let cursor: string | undefined;
 
@@ -259,8 +280,7 @@ export async function zeffyListPaymentsForContact(contactId: string): Promise<Re
       status: 'succeeded',
       limit: '100',
     };
-    const campaignId = process.env.ZEFFY_CAMPAIGN_ID?.trim();
-    if (campaignId) search.campaign = campaignId;
+    addPaymentScopeFilters(search, scope);
 
     if (cursor) search.starting_after = cursor;
 
@@ -291,6 +311,8 @@ export async function trustedZeffyPaymentForPendingRegistration(opts: {
   email: string;
   expectedUsd: number;
   checkoutToken?: string | null;
+  campaignId?: string | null;
+  createdGteUnix?: number;
 }): Promise<
   TrustedZeffyMatch | { notFoundReason: string } | { error: string }
 > {
@@ -305,15 +327,21 @@ export async function trustedZeffyPaymentForPendingRegistration(opts: {
       : opts.checkoutToken?.trim();
 
   try {
+    const scope = {
+      campaignId: opts.campaignId,
+      createdGteUnix: opts.createdGteUnix,
+    };
     const contactId = await zeffyFindContactIdByEmail(opts.email).catch(() => null);
 
     /** Prefer payments scoped by Zeffy contact id (API filter). */
     const contactScoped =
-      contactId !== null ? await zeffyListPaymentsForContact(contactId).catch(() => []) : [];
+      contactId !== null ? await zeffyListPaymentsForContact(contactId, scope).catch(() => []) : [];
 
     /** Fall back to scanning recent succeeded USD payments when contact resolution fails */
     const recent =
-      contactScoped.length === 0 ? await zeffyListRecentSucceededUsdPayments().catch(() => []) : [];
+      contactScoped.length === 0
+        ? await zeffyListRecentSucceededUsdPayments(scope).catch(() => [])
+        : [];
 
     const candidates = contactScoped.length ? contactScoped : recent;
     const allowMissingEmailProof = contactScoped.length > 0;

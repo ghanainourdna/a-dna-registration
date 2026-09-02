@@ -19,12 +19,12 @@ export default function RegisterFailedPage() {
           <Link href="/register" className="inline-flex rounded-full bg-emerald-700 px-6 py-2 text-sm font-semibold text-white">
             Try registration again
           </Link>
-          <a
+          <Link
             href="/"
             className="inline-flex rounded-full border border-stone-200 px-6 py-2 text-sm font-medium hover:border-emerald-300"
           >
             Home
-          </a>
+          </Link>
         </div>
       </div>
     </main>

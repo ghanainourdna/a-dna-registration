@@ -1,4 +1,4 @@
-import { FieldApi, FormApi } from '@tanstack/form-core';
+import { FieldApi, FormApi } from '@tanstack/react-form';
 import { describe, expect, it } from 'vitest';
 
 import {

@@ -16,10 +16,13 @@ export type RegistrationPaymentRow = {
   total_amount: string | number;
   payment_status: 'pending' | 'paid' | 'failed';
   checkout_correlation_reference: string | null;
+  conference_id: string | null;
+  created_at: string;
+  payment_sync_checked_at?: string | null;
 };
 
 export const REGISTRATION_PAYMENT_ROW_SELECT_PENDING =
-  'id,registration_type,needs_housing,room_type,occupancy_type,payment_status,total_amount,checkout_correlation_reference,registration_amount,housing_amount,email';
+  'id,registration_type,needs_housing,room_type,occupancy_type,payment_status,total_amount,checkout_correlation_reference,registration_amount,housing_amount,email,conference_id,created_at,payment_sync_checked_at';
 
 const UUID_RX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -100,7 +103,7 @@ function filterMatchingAmount(rows: RegistrationPaymentRow[], verifiedAmountCent
   });
 }
 
-/** Correlate webhook payment → pending registration safely (prefer UUID, tie-break checkout token substring). */
+/** Correlate webhook payment → pending registration safely using a UUID or checkout token. */
 export async function resolveRegistrationRowForZeffyWebhook(opts: {
   supabase: SupabaseClient;
   paymentObject: Record<string, unknown>;
@@ -141,24 +144,23 @@ export async function resolveRegistrationRowForZeffyWebhook(opts: {
   const pendingForEmail = await listPendingRegistrationsByEmail(supabase, emailTrim);
   const candidates = filterMatchingAmount(pendingForEmail, verifiedAmountCents);
 
-  if (candidates.length === 1) {
-    return { row: candidates[0]! };
+  const hinted = candidates.filter((r) => {
+    const t = r.checkout_correlation_reference?.trim();
+    return !!t && blob.includes(t);
+  });
+  if (hinted.length === 1) {
+    return { row: hinted[0]! };
   }
-
-  /** Multiple pending registrations for the same email + amount edge case */
-  if (candidates.length > 1) {
-    const hinted = candidates.filter((r) => {
-      const t = r.checkout_correlation_reference?.trim();
-      return !!t && blob.includes(t);
-    });
-
-    if (hinted.length === 1) {
-      return { row: hinted[0]! };
-    }
+  if (hinted.length > 1) {
     return { ambiguous: true };
   }
 
-  return { rejectReason: 'not_found_pending_registration' };
+  return {
+    rejectReason:
+      candidates.length > 0
+        ? 'missing_checkout_correlation'
+        : 'not_found_pending_registration',
+  };
 }
 
 /**
@@ -172,7 +174,10 @@ export async function finalizeRegistrationPaymentForRow(
 ): Promise<
   | { outcome: 'paid'; registrationId: string }
   | { outcome: 'already_paid'; registrationId: string }
-  | { outcome: 'rejected'; reason: 'pricing_mismatch' | 'invalid_total' | 'amount_mismatch' }
+  | {
+      outcome: 'rejected';
+      reason: 'pricing_mismatch' | 'invalid_total' | 'amount_mismatch' | 'payment_already_used';
+    }
   | { outcome: 'db_error'; message: string }
 > {
   const externalId = externalPaymentId.trim();
@@ -197,6 +202,19 @@ export async function finalizeRegistrationPaymentForRow(
     return { outcome: 'already_paid', registrationId: row.id };
   }
 
+  const claim = await claimZeffyPaymentForRegistration(
+    supabase,
+    row.id,
+    externalId,
+    Math.round(verifiedAmountCents),
+  );
+  if (claim.outcome === 'rejected') {
+    return { outcome: 'rejected', reason: 'payment_already_used' };
+  }
+  if (claim.outcome === 'db_error') {
+    return claim;
+  }
+
   const { error: updError } = await supabase
     .from('conference_registrations')
     .update({
@@ -210,4 +228,100 @@ export async function finalizeRegistrationPaymentForRow(
   }
 
   return { outcome: 'paid', registrationId: row.id };
+}
+
+type PaymentAuditRow = {
+  id: string;
+  registration_id: string | null;
+};
+
+async function loadZeffyPaymentAudit(
+  supabase: SupabaseClient,
+  externalPaymentId: string,
+): Promise<{ row: PaymentAuditRow | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('provider_payment_audit')
+    .select('id,registration_id')
+    .eq('provider', 'zeffy')
+    .eq('external_payment_id', externalPaymentId)
+    .maybeSingle();
+
+  return {
+    row: (data as PaymentAuditRow | null) ?? null,
+    error: error?.message ?? null,
+  };
+}
+
+async function claimZeffyPaymentForRegistration(
+  supabase: SupabaseClient,
+  registrationId: string,
+  externalPaymentId: string,
+  amountCents: number,
+): Promise<
+  | { outcome: 'claimed' }
+  | { outcome: 'rejected' }
+  | { outcome: 'db_error'; message: string }
+> {
+  const inserted = await supabase
+    .from('provider_payment_audit')
+    .insert({
+      provider: 'zeffy',
+      external_payment_id: externalPaymentId,
+      event_type: 'payment.reconciled',
+      registration_id: registrationId,
+      amount_cents: amountCents,
+      currency: 'USD',
+      status: 'succeeded',
+      payload: { source: 'api_reconciliation' },
+    })
+    .select('id,registration_id')
+    .maybeSingle();
+
+  if (!inserted.error) {
+    return { outcome: 'claimed' };
+  }
+
+  const duplicate =
+    inserted.error.code === '23505' ||
+    /duplicate key value/i.test(inserted.error.message ?? '');
+  if (!duplicate) {
+    return { outcome: 'db_error', message: inserted.error.message };
+  }
+
+  const existing = await loadZeffyPaymentAudit(supabase, externalPaymentId);
+  if (existing.error) {
+    return { outcome: 'db_error', message: existing.error };
+  }
+  if (!existing.row) {
+    return { outcome: 'db_error', message: 'Zeffy payment claim could not be read back.' };
+  }
+  if (existing.row.registration_id === registrationId) {
+    return { outcome: 'claimed' };
+  }
+  if (existing.row.registration_id) {
+    return { outcome: 'rejected' };
+  }
+
+  const claimed = await supabase
+    .from('provider_payment_audit')
+    .update({ registration_id: registrationId })
+    .eq('id', existing.row.id)
+    .is('registration_id', null)
+    .select('id,registration_id')
+    .maybeSingle();
+
+  if (claimed.error) {
+    return { outcome: 'db_error', message: claimed.error.message };
+  }
+  if (claimed.data) {
+    return { outcome: 'claimed' };
+  }
+
+  const winner = await loadZeffyPaymentAudit(supabase, externalPaymentId);
+  if (winner.error) {
+    return { outcome: 'db_error', message: winner.error };
+  }
+  return winner.row?.registration_id === registrationId
+    ? { outcome: 'claimed' }
+    : { outcome: 'rejected' };
 }

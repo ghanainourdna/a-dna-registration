@@ -36,12 +36,15 @@ Copy values from your team or from Vercel project settings. Do not commit real s
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon (public) key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only; used for admin/catalog reads - never expose to the client |
-| `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` | Zeffy campaign URL (full ticket grid). Required. One link is enough for all tiers. |
+| `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` | Default (Ghana 2027) Zeffy campaign URL. |
+| `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL_<SLUG>` | Optional conference-specific checkout URL, e.g. `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL_USA_2026`. |
 | `ZEFFY_CHECKOUT_URL_*` | Optional per-tier deep links only if Zeffy gives you separate one-ticket URLs |
 | `ZEFFY_API_KEY` | Server-side Zeffy API key |
-| `ZEFFY_CAMPAIGN_ID` | Optional; narrows payment listing |
+| `ZEFFY_CAMPAIGN_ID` | Ghana 2027 campaign ID fallback; narrows payment reconciliation |
+| `ZEFFY_CAMPAIGN_ID_<SLUG>` | Optional conference-specific campaign ID, e.g. `ZEFFY_CAMPAIGN_ID_USA_2026` |
 | `ZEFFY_WEBHOOK_BEARER` | Optional; `Authorization: Bearer …` for webhooks |
-| `CRON_SECRET` | Shared secret for `/api/cron/zeffy-payment-sync`. Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. |
+| `CRON_SECRET` | Required bearer secret for Vercel's hourly payment reconciliation cron |
+| `ZEFFY_SYNC_SECRET` | Optional manual-sync bearer secret when `CRON_SECRET` is unavailable |
 | `RESEND_API_KEY` | Email sending |
 | `EMAIL_FROM` | Resend “from” address |
 | `EMAIL_REPLY_TO` | Reply-to for transactional mail |
@@ -62,6 +65,10 @@ curl -X POST https://campaign.g-dna.org/api/cron/zeffy-payment-sync \
 ### Database
 
 SQL migrations live in `supabase/migrations/`. Apply them to your Supabase project (SQL editor or CLI) so public reads (e.g. countries) match the app.
+
+Set `conferences.zeffy_campaign_id` for every active conference. Reconciliation also applies a
+registration-time lower bound and atomically claims each Zeffy payment ID, preventing an older or
+already-consumed payment from confirming another registration.
 
 Registrations live in `conference_registrations` and belong to a row in `conferences`. Email uniqueness is per conference (`conference_id` + `email`). `/register` is Ghana 2027 (`ghana-2027`). USA 2026 remains at `/register/usa-2026`. Add another event as a new `conferences` row, then use `/register/<slug>`. Set `conferences.world_country` to `africa` or `all` to choose which country list the form loads first.
 

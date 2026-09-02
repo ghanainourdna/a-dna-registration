@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
 import { RegisterEventPage } from "@/components/registration/register-event-page";
 import {
@@ -28,10 +29,9 @@ export default async function RegisterPage() {
     fetchConferenceBySlug(DEFAULT_CONFERENCE_SLUG),
   ]);
 
-  return (
-    <RegisterEventPage
-      conference={conference ?? DEFAULT_GHANA_2027_CONFERENCE}
-      countries={countries}
-    />
-  );
+  if (!conference) {
+    notFound();
+  }
+
+  return <RegisterEventPage conference={conference} countries={countries} />;
 }

@@ -129,7 +129,8 @@ export function resolveConferenceCheckoutUrl(opts: {
   const fromSlug = process.env[envKeyForConferenceSlug('NEXT_PUBLIC_ZEFFY_CHECKOUT_URL', opts.slug)]?.trim();
   if (fromSlug) return fromSlug;
   if (opts.slug === DEFAULT_CONFERENCE_SLUG || opts.slug === GHANA_2027_CONFERENCE_SLUG) {
-    return opts.defaultEnvUrl;
+    const fallback = opts.defaultEnvUrl.trim();
+    if (fallback) return fallback;
   }
   throw new Error(`Zeffy checkout URL is not configured for ${opts.slug}.`);
 }
@@ -169,20 +170,22 @@ function mapConferenceRow(row: ConferenceRow): Conference {
 
 /**
  * Public catalog read for the registration page.
- * Falls back to hardcoded conference copy when the table is missing or empty.
+ * Falls back to active hardcoded conference copy only when Supabase is not configured.
  */
 export async function fetchConferenceBySlug(slugInput?: string | null): Promise<Conference | null> {
   const slug = normalizeConferenceSlug(slugInput);
   if (isReservedRegisterSlug(slug)) return null;
 
   if (process.env.E2E_FIXTURE_COUNTRIES === '1') {
-    return fallbackConference(slug);
+    const conference = fallbackConference(slug);
+    return conference?.is_active ? conference : null;
   }
 
   try {
     const supabase = createCatalogClient();
     if (!supabase) {
-      return fallbackConference(slug);
+      const conference = fallbackConference(slug);
+      return conference?.is_active ? conference : null;
     }
 
     const { data, error } = await supabase
@@ -194,18 +197,18 @@ export async function fetchConferenceBySlug(slugInput?: string | null): Promise<
 
     if (error) {
       console.error('[conferences] fetch failed:', error.message);
-      return fallbackConference(slug);
+      return null;
     }
 
     const row = data as ConferenceRow | null;
     if (!row) {
-      return fallbackConference(slug);
+      return null;
     }
 
     return mapConferenceRow(row);
   } catch (e) {
     console.error('[conferences]', e);
-    return fallbackConference(slug);
+    return null;
   }
 }
 
@@ -214,7 +217,7 @@ export async function requireConferenceBySlug(
   slugInput?: string | null,
 ): Promise<{ id: string; conference: Conference }> {
   const slug = normalizeConferenceSlug(slugInput);
-  const { data, error } = await supabase
+  const { data: rawData, error } = await supabase
     .from('conferences')
     .select(CONFERENCE_CATALOG_SELECT)
     .eq('slug', slug)
@@ -224,8 +227,7 @@ export async function requireConferenceBySlug(
   if (error) {
     throw new Error(error.message);
   }
-
-  const row = data as ConferenceRow | null;
+  const row = rawData as ConferenceRow | null;
   if (!row?.id) {
     throw new InvalidConferenceError();
   }

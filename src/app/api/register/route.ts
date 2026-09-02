@@ -1,6 +1,11 @@
 import { requireConferenceBySlug } from '@/lib/conferences';
-import { DuplicateRegistrationError, InvalidConferenceError, InvalidCountryError } from '@/lib/errors';
-import type { RegistrationTier } from '@/lib/pricing';
+import {
+  DuplicateRegistrationError,
+  InvalidConferenceError,
+  InvalidCountryError,
+  InvalidRegistrationTierError,
+} from '@/lib/errors';
+import { isRegistrationTierAllowedForConference, type RegistrationTier } from '@/lib/pricing';
 import type { RegistrationFormValues } from '@/lib/schemas/registration';
 import { registrationFormSchema, summarizeForPersistence } from '@/lib/schemas/registration';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
@@ -36,7 +41,11 @@ export async function POST(req: NextRequest) {
     const result = await saveRegistration(parsed.data, conferenceSlug);
     return NextResponse.json(result, { status: result.created ? 201 : 200 });
   } catch (e: unknown) {
-    if (e instanceof InvalidCountryError || e instanceof InvalidConferenceError) {
+    if (
+      e instanceof InvalidCountryError ||
+      e instanceof InvalidConferenceError ||
+      e instanceof InvalidRegistrationTierError
+    ) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
     if (e instanceof DuplicateRegistrationError) {
@@ -63,7 +72,16 @@ async function saveRegistration(values: RegistrationFormValues, conferenceSlug?:
     throw new InvalidCountryError();
   }
 
-  const { id: conferenceId } = await requireConferenceBySlug(supabase, conferenceSlug);
+  const { id: conferenceId, conference } = await requireConferenceBySlug(supabase, conferenceSlug);
+  if (
+    !isRegistrationTierAllowedForConference(
+      conference.slug,
+      values.registration_type,
+      values.is_student,
+    )
+  ) {
+    throw new InvalidRegistrationTierError();
+  }
 
   const { data: existing } = await supabase
     .from('conference_registrations')

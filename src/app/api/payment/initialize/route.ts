@@ -1,3 +1,4 @@
+import { resolveConferenceCheckoutUrl } from '@/lib/conferences';
 import { centsFromUsd, type OccupancyType, type RegistrationTier, type RoomTypeCode } from '@/lib/pricing';
 import { assertPricingMatches } from '@/lib/schemas/registration';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
@@ -39,10 +40,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const envFallback = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim();
-    if (!envFallback) {
-      return NextResponse.json({ error: 'NEXT_PUBLIC_ZEFFY_CHECKOUT_URL is not configured' }, { status: 503 });
-    }
+    const envFallback = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim() ?? '';
 
     const result = await prepareCheckout(body.registrationId, supabase, envFallback);
     let appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
@@ -125,15 +123,28 @@ async function prepareCheckout(
 
   let campaignUrl = fallbackCampaignUrl;
   if (row.conference_id) {
-    const { data: conference } = await supabase
+    const { data: rawConference, error: conferenceError } = await supabase
       .from('conferences')
-      .select('zeffy_checkout_url')
+      .select('slug,zeffy_checkout_url')
       .eq('id', row.conference_id)
       .maybeSingle();
-    const conferenceUrl = conference?.zeffy_checkout_url?.trim();
-    if (conferenceUrl) {
-      campaignUrl = conferenceUrl;
+    if (conferenceError) {
+      throw new Error(conferenceError.message);
     }
+    const conference = rawConference as {
+      slug?: string;
+      zeffy_checkout_url?: string | null;
+    } | null;
+    if (!conference?.slug) {
+      throw new Error('Registration conference not found');
+    }
+    campaignUrl = resolveConferenceCheckoutUrl({
+      slug: conference.slug,
+      dbUrl: conference.zeffy_checkout_url,
+      defaultEnvUrl: fallbackCampaignUrl,
+    });
+  } else if (!campaignUrl) {
+    throw new Error('Zeffy checkout URL is not configured for this registration.');
   }
 
   const checkoutBaseUrl = resolveZeffyCheckoutBaseUrl(row, campaignUrl);

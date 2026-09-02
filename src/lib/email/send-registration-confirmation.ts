@@ -141,13 +141,7 @@ export function canClaimConfirmationEmail(row: ConfirmationEmailClaimRow, now: D
   return now.getTime() - Date.parse(row.confirmation_email_claimed_at) >= CONFIRMATION_EMAIL_CLAIM_LEASE_MS;
 }
 
-type ConfirmationEmailSupabase = {
-  rpc: (
-    name: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  from: SupabaseClient['from'];
-};
+type ConfirmationEmailSupabase = Pick<SupabaseClient, 'rpc' | 'from'>;
 
 /**
  * Claim a 10-minute lease, send, then set `confirmation_email_sent_at` only after Resend accepts.

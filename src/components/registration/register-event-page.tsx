@@ -313,6 +313,7 @@ export function RegisterEventPage({
         conferenceSlug={conference.slug}
         conferenceTitle={conference.title}
         worldCountry={conference.world_country}
+        housingEnabled={conference.housing_enabled}
       />
 
       <footer className="mx-auto w-full max-w-[min(115rem,calc(100%-2rem))] min-w-0 px-4 pb-10 pt-8 text-center text-sm leading-relaxed text-stone-500 md:px-10">

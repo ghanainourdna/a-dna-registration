@@ -36,6 +36,7 @@ describe('conference slugs', () => {
     expect(DEFAULT_GHANA_2027_CONFERENCE.location_label).toMatch(/UPSA, Accra/);
     expect(DEFAULT_GHANA_2027_CONFERENCE.world_country).toBe('africa');
     expect(DEFAULT_USA_2026_CONFERENCE.world_country).toBe('all');
+    expect(DEFAULT_USA_2026_CONFERENCE.is_active).toBe(true);
   });
 
   it('reads world_country as africa or all', () => {

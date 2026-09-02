@@ -18,3 +18,10 @@ export class InvalidConferenceError extends Error {
     this.name = 'InvalidConferenceError';
   }
 }
+
+export class InvalidRegistrationTierError extends Error {
+  constructor() {
+    super('This registration option is not available for the selected conference.');
+    this.name = 'InvalidRegistrationTierError';
+  }
+}

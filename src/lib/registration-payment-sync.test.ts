@@ -20,6 +20,9 @@ function pendingRow(overrides: Partial<RegistrationPaymentRow> = {}): Registrati
     total_amount: 100,
     payment_status: 'pending',
     checkout_correlation_reference: 'ADNA26-token',
+    conference_id: '22222222-2222-2222-2222-222222222222',
+    created_at: '2026-09-02T12:00:00.000Z',
+    payment_sync_checked_at: null,
     ...overrides,
   };
 }
@@ -50,7 +53,15 @@ describe('syncOneRegistrationPaymentFromZeffy', () => {
     const result = await syncOneRegistrationPaymentFromZeffy(
       {} as never,
       pendingRow(),
-      { matchPayment, finalize, sendConfirmation },
+      {
+        matchPayment,
+        finalize,
+        sendConfirmation,
+        resolvePaymentScope: async () => ({
+          campaignId: 'campaign_ghana_2027',
+          createdGteUnix: 1_777_809_300,
+        }),
+      },
     );
 
     expect(result).toMatchObject({
@@ -59,6 +70,12 @@ describe('syncOneRegistrationPaymentFromZeffy', () => {
       alreadyPaid: false,
     });
     expect(finalize).toHaveBeenCalledOnce();
+    expect(matchPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        campaignId: 'campaign_ghana_2027',
+        createdGteUnix: 1_777_809_300,
+      }),
+    );
     expect(sendConfirmation).toHaveBeenCalledWith({}, pendingRow().id);
   });
 
@@ -67,6 +84,7 @@ describe('syncOneRegistrationPaymentFromZeffy', () => {
       matchPayment: async () => ({ notFoundReason: 'no_matching_payment_yet' }),
       finalize: vi.fn(),
       sendConfirmation: vi.fn(),
+      resolvePaymentScope: async () => ({ createdGteUnix: 1_777_809_300 }),
     });
 
     expect(result).toEqual({
@@ -83,14 +101,25 @@ describe('syncPendingRegistrationPaymentsFromZeffy', () => {
     const paid = pendingRow({ id: 'paid-1', email: 'paid@example.com' });
     const waiting = pendingRow({ id: 'wait-1', email: 'wait@example.com', total_amount: 200 });
 
+    const orderCalls: Array<{ column: string; options: unknown }> = [];
     const supabase = {
       from: () => ({
         select: () => ({
           eq: () => ({
-            order: () => ({
-              limit: async () => ({ data: [paid, waiting], error: null }),
-            }),
+            or: () => {
+              const ordered = {
+                order: (column: string, options: unknown) => {
+                  orderCalls.push({ column, options });
+                  return ordered;
+                },
+                limit: async () => ({ data: [paid, waiting], error: null }),
+              };
+              return ordered;
+            },
           }),
+        }),
+        update: () => ({
+          in: async () => ({ error: null }),
         }),
       }),
     };
@@ -115,7 +144,12 @@ describe('syncPendingRegistrationPaymentsFromZeffy', () => {
     const summary = await syncPendingRegistrationPaymentsFromZeffy(
       supabase as never,
       { limit: 50 },
-      { matchPayment, finalize, sendConfirmation },
+      {
+        matchPayment,
+        finalize,
+        sendConfirmation,
+        resolvePaymentScope: async () => ({ createdGteUnix: 1_777_809_300 }),
+      },
     );
 
     expect(summary).toEqual({
@@ -127,5 +161,12 @@ describe('syncPendingRegistrationPaymentsFromZeffy', () => {
     });
     expect(finalize).toHaveBeenCalledOnce();
     expect(sendConfirmation).toHaveBeenCalledWith(supabase, 'paid-1');
+    expect(orderCalls).toEqual([
+      {
+        column: 'payment_sync_checked_at',
+        options: { ascending: true, nullsFirst: true },
+      },
+      { column: 'created_at', options: { ascending: false } },
+    ]);
   });
 });

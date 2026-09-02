@@ -1,4 +1,5 @@
 import { sendPaidRegistrationConfirmationIfNeeded } from '@/lib/email/send-registration-confirmation';
+import { resolveConferenceZeffyCampaignId } from '@/lib/conferences';
 import {
   finalizeRegistrationPaymentForRow,
   REGISTRATION_PAYMENT_ROW_SELECT_PENDING,
@@ -10,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const DEFAULT_PENDING_PAYMENT_SYNC_LIMIT = 50;
 export const MAX_PENDING_PAYMENT_SYNC_LIMIT = 100;
+export const PENDING_PAYMENT_RECHECK_MS = 55 * 60 * 1000;
 
 export function clampPendingPaymentSyncLimit(raw: unknown): number {
   if (typeof raw === 'string' && raw.trim()) {
@@ -30,13 +32,53 @@ export type RegistrationPaymentSyncDeps = {
   matchPayment: typeof trustedZeffyPaymentForPendingRegistration;
   finalize: typeof finalizeRegistrationPaymentForRow;
   sendConfirmation: typeof sendPaidRegistrationConfirmationIfNeeded;
+  resolvePaymentScope: typeof resolveRegistrationPaymentScope;
 };
 
 const defaultDeps: RegistrationPaymentSyncDeps = {
   matchPayment: trustedZeffyPaymentForPendingRegistration,
   finalize: finalizeRegistrationPaymentForRow,
   sendConfirmation: sendPaidRegistrationConfirmationIfNeeded,
+  resolvePaymentScope: resolveRegistrationPaymentScope,
 };
+
+export async function resolveRegistrationPaymentScope(
+  supabase: SupabaseClient,
+  row: RegistrationPaymentRow,
+): Promise<{ campaignId?: string; createdGteUnix: number }> {
+  let campaignId = process.env.ZEFFY_CAMPAIGN_ID?.trim() || undefined;
+
+  if (row.conference_id) {
+    const { data, error } = await supabase
+      .from('conferences')
+      .select('slug,zeffy_campaign_id')
+      .eq('id', row.conference_id)
+      .maybeSingle();
+    if (error) {
+      throw new Error(error.message);
+    }
+    const conference = data as {
+      slug?: string;
+      zeffy_campaign_id?: string | null;
+    } | null;
+    if (!conference?.slug) {
+      throw new Error('Registration conference not found');
+    }
+    campaignId =
+      resolveConferenceZeffyCampaignId(conference.slug, conference.zeffy_campaign_id) ??
+      undefined;
+    if (!campaignId) {
+      throw new Error(`Zeffy campaign ID is not configured for ${conference.slug}.`);
+    }
+  }
+
+  const createdMs = Date.parse(row.created_at);
+  const createdGteUnix = Number.isFinite(createdMs)
+    ? Math.max(0, Math.floor(createdMs / 1000) - 300)
+    : Math.max(0, Math.floor(Date.now() / 1000) - 24 * 60 * 60);
+
+  return { campaignId, createdGteUnix };
+}
 
 export type OneRegistrationPaymentSyncResult =
   | {
@@ -71,10 +113,13 @@ export async function syncOneRegistrationPaymentFromZeffy(
     return { outcome: 'error', message: 'Registration email unavailable.', httpStatus: 500 };
   }
 
+  const paymentScope = await deps.resolvePaymentScope(supabase, row);
+
   const match = await deps.matchPayment({
     email: row.email.trim().toLowerCase(),
     expectedUsd: amountUsd,
     checkoutToken: row.checkout_correlation_reference,
+    ...paymentScope,
   });
 
   if ('error' in match) {
@@ -122,12 +167,16 @@ export type PendingRegistrationPaymentSyncSummary = {
 export async function listPendingRegistrationsForPaymentSync(
   supabase: SupabaseClient,
   limit: number,
+  now = new Date(),
 ): Promise<RegistrationPaymentRow[]> {
+  const staleBefore = new Date(now.getTime() - PENDING_PAYMENT_RECHECK_MS).toISOString();
   const { data, error } = await supabase
     .from('conference_registrations')
     .select(REGISTRATION_PAYMENT_ROW_SELECT_PENDING)
     .eq('payment_status', 'pending')
-    .order('created_at', { ascending: true })
+    .or(`payment_sync_checked_at.is.null,payment_sync_checked_at.lt.${staleBefore}`)
+    .order('payment_sync_checked_at', { ascending: true, nullsFirst: true })
+    .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) {
@@ -135,6 +184,24 @@ export async function listPendingRegistrationsForPaymentSync(
   }
 
   return (data ?? []) as RegistrationPaymentRow[];
+}
+
+async function markRegistrationsCheckedForPaymentSync(
+  supabase: SupabaseClient,
+  rows: RegistrationPaymentRow[],
+  checkedAt: Date,
+): Promise<void> {
+  if (rows.length === 0) return;
+  const { error } = await supabase
+    .from('conference_registrations')
+    .update({ payment_sync_checked_at: checkedAt.toISOString() })
+    .in(
+      'id',
+      rows.map((row) => row.id),
+    );
+  if (error) {
+    throw new Error(error.message);
+  }
 }
 
 /**
@@ -147,7 +214,9 @@ export async function syncPendingRegistrationPaymentsFromZeffy(
   deps: RegistrationPaymentSyncDeps = defaultDeps,
 ): Promise<PendingRegistrationPaymentSyncSummary> {
   const limit = clampPendingPaymentSyncLimit(opts.limit);
-  const rows = await listPendingRegistrationsForPaymentSync(supabase, limit);
+  const checkedAt = new Date();
+  const rows = await listPendingRegistrationsForPaymentSync(supabase, limit, checkedAt);
+  await markRegistrationsCheckedForPaymentSync(supabase, rows, checkedAt);
 
   const summary: PendingRegistrationPaymentSyncSummary = {
     checked: rows.length,
