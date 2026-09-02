@@ -34,6 +34,6 @@ export const REGISTRATION_TIER_LABELS: Record<
   reception: {
     label: '$150 - Reception',
     price: 150,
-    note: 'Available until Oct 31 · Shown for students in addition to the tickets above',
+    note: 'Available until Oct 31 · Student registration only',
   },
 };

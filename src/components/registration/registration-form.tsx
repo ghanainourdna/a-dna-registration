@@ -1681,7 +1681,7 @@ export function RegistrationForm({
           <Section
             id="payment"
             title="Payment"
-            subtitle="Choose one registration type per attendee. You cannot combine multiple ticket types in a single registration. Reception is available when you select student status."
+            subtitle="Choose one registration type per attendee. You cannot combine multiple ticket types in a single registration. Students see the reception ticket only; other attendees see the conference tickets."
           >
             <div className="space-y-3">
               <Label required className="mb-2 block">

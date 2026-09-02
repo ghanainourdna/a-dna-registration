@@ -74,7 +74,7 @@ test.describe('Registration validation interactions', () => {
     ).toHaveCount(0);
   });
 
-  test('registration tiers match Ghana tickets; reception appears for students only', async ({
+  test('non-students see Ghana conference tickets; students see reception only', async ({
     page,
   }) => {
     const student = page.locator('#registration-field-is_student');
@@ -109,15 +109,16 @@ test.describe('Registration validation interactions', () => {
       tiers.getByRole('radio', {
         name: /Diaspora Nurses, Midwives and Allied Health/i,
       }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       tiers.getByRole('radio', { name: /Diaspora Physicians/i }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       tiers.getByRole('radio', {
         name: /Low- and Moderate-Income Nurses, Midwives and Allied Health/i,
       }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(tiers.getByRole('radio', { name: /Reception/i })).toBeVisible();
+    await expect(tiers.getByRole('radio')).toHaveCount(1);
   });
 });
