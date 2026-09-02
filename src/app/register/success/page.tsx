@@ -135,7 +135,7 @@ function SuccessContent() {
         return;
       }
 
-      /** Unexpected payload — retry briefly in case schemas changed */
+      /** Unexpected payload - retry briefly in case schemas changed */
       if (attempt < maxAttempts) {
         window.setTimeout(poll, delayMs);
         setState({ status: 'pending', triesLeft: maxAttempts - attempt, reason: 'unexpected_response_retrying' });
@@ -170,10 +170,10 @@ function SuccessContent() {
     ) : state.status === 'success' ? (
       <div className="space-y-4 text-sm text-stone-700">
         <p className="text-emerald-800">
-          Payment confirmed — thank you! Your seat (and housing where selected) will be finalized by the registrar.
+          Payment confirmed. Thank you! Your seat will be finalized by the registrar.
         </p>
         <p>
-          A confirmation email is on its way. Detailed logistics for the Johns Hopkins gathering will follow. Reach out anytime at{' '}
+          A confirmation email is on its way. Detailed logistics for the gathering will follow. Reach out anytime at{' '}
           <a className="text-emerald-700 underline underline-offset-2" href="mailto:info@g-dna.org">
             info@g-dna.org
           </a>

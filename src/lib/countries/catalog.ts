@@ -1,3 +1,4 @@
+import { AFRICAN_COUNTRIES } from '@/lib/countries/africa';
 import { createClient } from '@supabase/supabase-js';
 
 export type CountryOption = {
@@ -5,9 +6,14 @@ export type CountryOption = {
   name: string;
 };
 
+const AFRICAN_COUNTRY_OPTIONS: CountryOption[] = AFRICAN_COUNTRIES.map((country) => ({
+  code: country.code,
+  name: country.name,
+}));
+
 /** Deterministic list for Playwright E2E (`E2E_FIXTURE_COUNTRIES=1` on the Next.js server). */
 const E2E_COUNTRY_OPTIONS: CountryOption[] = [
-  { code: 'GH', name: 'Ghana' },
+  ...AFRICAN_COUNTRY_OPTIONS,
   { code: 'US', name: 'United States of America' },
 ];
 
@@ -26,6 +32,8 @@ function createCountriesSupabaseClient() {
   });
 }
 
+let loggedMissingSupabaseEnv = false;
+
 /** ISO 3166-1 alpha-2 list from `public.countries` (sorted by name). */
 export async function fetchCountriesCatalog(): Promise<CountryOption[]> {
   if (process.env.E2E_FIXTURE_COUNTRIES === '1') {
@@ -35,10 +43,13 @@ export async function fetchCountriesCatalog(): Promise<CountryOption[]> {
   try {
     const supabase = createCountriesSupabaseClient();
     if (!supabase) {
-      console.error(
-        '[countries] missing NEXT_PUBLIC_SUPABASE_URL or (NEXT_PUBLIC_SUPABASE_ANON_KEY | SUPABASE_SERVICE_ROLE_KEY)',
-      );
-      return [];
+      if (!loggedMissingSupabaseEnv) {
+        loggedMissingSupabaseEnv = true;
+        console.warn(
+          '[countries] no Supabase env; using African country fallback. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for the full catalog.',
+        );
+      }
+      return AFRICAN_COUNTRY_OPTIONS;
     }
     const { data, error } = await supabase
       .from('countries')
@@ -46,17 +57,20 @@ export async function fetchCountriesCatalog(): Promise<CountryOption[]> {
       .order('name', { ascending: true });
     if (error) {
       console.error('[countries] fetch failed:', error.message);
-      return [];
+      return AFRICAN_COUNTRY_OPTIONS;
     }
     const rows = (data ?? []) as { code: string; name: string }[];
-    return rows.map((row) => ({
-      code: String(row.code ?? '')
-        .trim()
-        .toUpperCase(),
-      name: row.name ?? '',
-    }));
+    const catalog = rows
+      .map((row) => ({
+        code: String(row.code ?? '')
+          .trim()
+          .toUpperCase(),
+        name: row.name ?? '',
+      }))
+      .filter((row) => row.code && row.name);
+    return catalog.length > 0 ? catalog : AFRICAN_COUNTRY_OPTIONS;
   } catch (e) {
     console.error('[countries]', e);
-    return [];
+    return AFRICAN_COUNTRY_OPTIONS;
   }
 }

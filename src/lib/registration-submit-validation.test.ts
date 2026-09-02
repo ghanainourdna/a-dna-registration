@@ -40,7 +40,7 @@ function validBase(
     linkedin_url: '',
     facebook_handle: '',
     other_social: '',
-    registration_type: 'conference_only',
+    registration_type: 'diaspora_nurses_allied_health',
     ...overrides,
   };
 }
@@ -108,7 +108,7 @@ describe('registration form submit validation', () => {
     expect(heard.state.meta.isValid).toBe(true);
   });
 
-  it('allows submit after housing yes→no clears required room fields', async () => {
+  it('allows submit when housing is yes without room fields', async () => {
     let submitted = false;
     const form = new FormApi({
       defaultValues: validBase({
@@ -124,36 +124,6 @@ describe('registration form submit validation', () => {
       },
     });
     form.mount();
-
-    const housing = new FieldApi({
-      form,
-      name: 'needs_housing',
-      validators: registrationFieldValidators('needs_housing'),
-    });
-    housing.mount();
-    const room = new FieldApi({
-      form,
-      name: 'room_type',
-      validators: registrationFieldValidators('room_type', ['needs_housing']),
-    });
-    room.mount();
-    const occupancy = new FieldApi({
-      form,
-      name: 'occupancy_type',
-      validators: registrationFieldValidators('occupancy_type', [
-        'needs_housing',
-      ]),
-    });
-    occupancy.mount();
-
-    await form.handleSubmit();
-    expect(submitted).toBe(false);
-    expect(room.state.meta.errors.length).toBeGreaterThan(0);
-
-    // Mirrors UI: choosing No clears room fields.
-    housing.handleChange('no');
-    form.setFieldValue('room_type', null);
-    form.setFieldValue('occupancy_type', null);
 
     await form.handleSubmit();
     expect(submitted).toBe(true);

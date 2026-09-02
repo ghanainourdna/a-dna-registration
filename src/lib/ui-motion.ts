@@ -13,7 +13,7 @@ export function useUiMotion() {
     reduced,
     /** Transitions for opacity / cross-fade */
     fade: reduced ? { duration: 0 } : { duration: UI_MS / 1000, ease: [0.25, 0.1, 0.25, 1] as const },
-    /** Width / progress — spring tracks smoothly when the target updates often (scroll-linked steps on mobile). */
+    /** Width / progress - spring tracks smoothly when the target updates often (scroll-linked steps on mobile). */
     bar: reduced
       ? { duration: 0 }
       : {

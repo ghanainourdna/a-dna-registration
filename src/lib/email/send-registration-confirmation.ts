@@ -7,7 +7,7 @@ import { normalizeEmail } from '@/lib/schemas/registration';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export const EVENT_TITLE = 'A-DNA Global Conference USA 2026';
+export const EVENT_TITLE = 'A-DNA Ghana Conference 2027';
 
 export type PaidRegistrationEmailRow = {
   id: string;
@@ -16,13 +16,15 @@ export type PaidRegistrationEmailRow = {
   email: string;
   registration_type: RegistrationTier;
   total_amount: string | number;
+  event_title?: string;
 };
 
-export function paidRegistrationEmailSubject(): string {
-  return `Registration confirmed · ${EVENT_TITLE}`;
+export function paidRegistrationEmailSubject(eventTitle = EVENT_TITLE): string {
+  return `Registration confirmed · ${eventTitle}`;
 }
 
 export function buildPaidRegistrationConfirmation(row: PaidRegistrationEmailRow) {
+  const eventTitle = row.event_title?.trim() || EVENT_TITLE;
   const totalUsd =
     typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
   const totalPaid = Number.isFinite(totalUsd) ? `$${totalUsd.toFixed(2)} USD` : String(row.total_amount);
@@ -37,7 +39,7 @@ export function buildPaidRegistrationConfirmation(row: PaidRegistrationEmailRow)
   const text = [
     `${firstName} ${lastName}`,
     '',
-    `Thank you for registering for ${EVENT_TITLE}. Your payment has been received and your registration is confirmed.`,
+    `Thank you for registering for ${eventTitle}. Your payment has been received and your registration is confirmed.`,
     `Tier: ${tierLabel}`,
     `Amount paid: ${totalPaid}`,
     '',
@@ -53,7 +55,7 @@ export function buildPaidRegistrationConfirmation(row: PaidRegistrationEmailRow)
     .join('\n');
 
   return {
-    subject: paidRegistrationEmailSubject(),
+    subject: paidRegistrationEmailSubject(eventTitle),
     text,
     to: normalizedTo,
     firstName,
@@ -75,7 +77,7 @@ export async function sendPaidRegistrationConfirmationEmail(
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[email] RESEND_API_KEY is not set — paid confirmation email skipped.');
+      console.warn('[email] RESEND_API_KEY is not set - paid confirmation email skipped.');
     }
     return false;
   }
@@ -97,7 +99,7 @@ export async function sendPaidRegistrationConfirmationEmail(
       react: RegistrationConfirmationEmail({
         firstName: content.firstName,
         lastName: content.lastName,
-        eventTitle: EVENT_TITLE,
+        eventTitle: row.event_title?.trim() || EVENT_TITLE,
         tierLabel: content.tierLabel,
         totalPaid: content.totalPaid,
         detailsUrl: content.detailsUrl,
@@ -123,9 +125,117 @@ export async function sendPaidRegistrationConfirmationEmail(
   }
 }
 
+export const CONFIRMATION_EMAIL_CLAIM_LEASE_MS = 10 * 60 * 1000;
+
+export type ConfirmationEmailClaimRow = {
+  payment_status: 'pending' | 'paid' | 'failed';
+  confirmation_email_sent_at: string | null;
+  confirmation_email_claimed_at: string | null;
+};
+
+/** Mirrors the SQL claim predicate: unpaid/already-sent rows are skipped; stale leases can be reclaimed. */
+export function canClaimConfirmationEmail(row: ConfirmationEmailClaimRow, now: Date = new Date()): boolean {
+  if (row.payment_status !== 'paid') return false;
+  if (row.confirmation_email_sent_at) return false;
+  if (!row.confirmation_email_claimed_at) return true;
+  return now.getTime() - Date.parse(row.confirmation_email_claimed_at) >= CONFIRMATION_EMAIL_CLAIM_LEASE_MS;
+}
+
+type ConfirmationEmailSupabase = {
+  rpc: (
+    name: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  from: SupabaseClient['from'];
+};
+
+/**
+ * Claim a 10-minute lease, send, then set `confirmation_email_sent_at` only after Resend accepts.
+ * If send fails, the claim is released. If the process dies mid-send, a later caller can reclaim
+ * after the lease expires.
+ */
+export async function deliverPaidRegistrationConfirmationWithClaim(
+  supabase: ConfirmationEmailSupabase,
+  registrationId: string,
+  sendEmail: (row: PaidRegistrationEmailRow) => Promise<boolean> = sendPaidRegistrationConfirmationEmail,
+): Promise<boolean> {
+  const { data: claimToken, error: claimError } = await supabase.rpc(
+    'claim_registration_confirmation_email_send',
+    { p_registration_id: registrationId },
+  );
+
+  if (claimError) {
+    console.error('[email] claim paid confirmation', claimError.message);
+    return false;
+  }
+
+  if (typeof claimToken !== 'string' || !claimToken.trim()) {
+    return false;
+  }
+
+  const token = claimToken.trim();
+
+  const { data: row, error: fetchError } = await supabase
+    .from('conference_registrations')
+    .select('id,first_name,last_name,email,registration_type,total_amount,payment_status,conference_id')
+    .eq('id', registrationId)
+    .maybeSingle();
+
+  if (fetchError || !row || (row as { payment_status?: string }).payment_status !== 'paid') {
+    const { error: clearError } = await supabase.rpc('clear_registration_confirmation_email_claim', {
+      p_registration_id: registrationId,
+      p_claim_token: token,
+    });
+    if (clearError) {
+      console.error('[email] clear paid confirmation claim', clearError.message);
+    }
+    if (fetchError) {
+      console.error('[email] load paid confirmation row', fetchError.message);
+    }
+    return false;
+  }
+
+  const typedRow = row as PaidRegistrationEmailRow & { conference_id?: string | null };
+  let eventTitle = EVENT_TITLE;
+  if (typedRow.conference_id) {
+    const { data: conference } = await supabase
+      .from('conferences')
+      .select('title')
+      .eq('id', typedRow.conference_id)
+      .maybeSingle();
+    if (conference?.title?.trim()) {
+      eventTitle = conference.title.trim();
+    }
+  }
+
+  const sent = await sendEmail({ ...typedRow, event_title: eventTitle });
+  if (!sent) {
+    const { error: clearError } = await supabase.rpc('clear_registration_confirmation_email_claim', {
+      p_registration_id: registrationId,
+      p_claim_token: token,
+    });
+    if (clearError) {
+      console.error('[email] clear paid confirmation claim', clearError.message);
+    }
+    return false;
+  }
+
+  const { data: marked, error: markError } = await supabase.rpc(
+    'mark_registration_confirmation_email_sent',
+    { p_registration_id: registrationId, p_claim_token: token },
+  );
+
+  if (markError) {
+    console.error('[email] mark paid confirmation sent', markError.message);
+    return false;
+  }
+
+  return marked === true;
+}
+
 /**
  * Claim + send the post-payment confirmation once. Safe to call from webhook and verify.
- * If send fails, the claim is cleared so a later path can retry.
+ * Uses a time-limited lease so a crash between claim and Resend does not permanently suppress email.
  */
 export async function sendPaidRegistrationConfirmationIfNeeded(
   supabase: SupabaseClient,
@@ -135,34 +245,5 @@ export async function sendPaidRegistrationConfirmationIfNeeded(
     return false;
   }
 
-  const claimedAt = new Date().toISOString();
-  const { data, error } = await supabase
-    .from('conference_registrations')
-    .update({ confirmation_email_sent_at: claimedAt })
-    .eq('id', registrationId)
-    .eq('payment_status', 'paid')
-    .is('confirmation_email_sent_at', null)
-    .select('id,first_name,last_name,email,registration_type,total_amount')
-    .maybeSingle();
-
-  if (error) {
-    console.error('[email] claim paid confirmation', error.message);
-    return false;
-  }
-  if (!data) {
-    return false;
-  }
-
-  const sent = await sendPaidRegistrationConfirmationEmail(data as PaidRegistrationEmailRow);
-  if (!sent) {
-    const { error: clearError } = await supabase
-      .from('conference_registrations')
-      .update({ confirmation_email_sent_at: null })
-      .eq('id', registrationId)
-      .eq('confirmation_email_sent_at', claimedAt);
-    if (clearError) {
-      console.error('[email] clear paid confirmation claim', clearError.message);
-    }
-  }
-  return sent;
+  return deliverPaidRegistrationConfirmationWithClaim(supabase, registrationId);
 }

@@ -22,6 +22,7 @@ type DbRow = {
   occupancy_type: OccupancyType | null;
   registration_amount: string | number;
   housing_amount: string | number;
+  conference_id?: string | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -38,12 +39,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const fallbackCheckout = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim();
-    if (!fallbackCheckout) {
+    const envFallback = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim();
+    if (!envFallback) {
       return NextResponse.json({ error: 'NEXT_PUBLIC_ZEFFY_CHECKOUT_URL is not configured' }, { status: 503 });
     }
 
-    const result = await prepareCheckout(body.registrationId, supabase, fallbackCheckout);
+    const result = await prepareCheckout(body.registrationId, supabase, envFallback);
     let appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
     if (!appUrl && process.env.VERCEL_URL) {
       appUrl = `https://${process.env.VERCEL_URL}`;
@@ -94,7 +95,7 @@ async function prepareCheckout(
   const { data, error } = await supabase
     .from('conference_registrations')
     .select(
-      'id,email,first_name,last_name,phone,payment_status,total_amount,registration_type,is_student,needs_housing,room_type,occupancy_type,registration_amount,housing_amount',
+      'id,email,first_name,last_name,phone,payment_status,total_amount,registration_type,is_student,needs_housing,room_type,occupancy_type,registration_amount,housing_amount,conference_id',
     )
     .eq('id', registrationId)
     .single();
@@ -122,7 +123,20 @@ async function prepareCheckout(
 
   const correlationToken = `ADNA26-${registrationId}-${Date.now()}`.slice(0, 200);
 
-  const checkoutBaseUrl = resolveZeffyCheckoutBaseUrl(row, fallbackCampaignUrl);
+  let campaignUrl = fallbackCampaignUrl;
+  if (row.conference_id) {
+    const { data: conference } = await supabase
+      .from('conferences')
+      .select('zeffy_checkout_url')
+      .eq('id', row.conference_id)
+      .maybeSingle();
+    const conferenceUrl = conference?.zeffy_checkout_url?.trim();
+    if (conferenceUrl) {
+      campaignUrl = conferenceUrl;
+    }
+  }
+
+  const checkoutBaseUrl = resolveZeffyCheckoutBaseUrl(row, campaignUrl);
 
   return {
     registrationId,

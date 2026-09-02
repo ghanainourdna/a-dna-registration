@@ -1,9 +1,7 @@
-import { sendPaidRegistrationConfirmationIfNeeded } from '@/lib/email/send-registration-confirmation';
 import {
   fetchRegistrationPaymentRowForFinalize,
-  finalizeRegistrationPaymentForRow,
 } from '@/lib/registration-payment-finalize';
-import { trustedZeffyPaymentForPendingRegistration } from '@/lib/zeffy-client';
+import { syncOneRegistrationPaymentFromZeffy } from '@/lib/registration-payment-sync';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 
 import { NextResponse, type NextRequest } from 'next/server';
@@ -32,66 +30,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Registration not found.' }, { status: 404 });
     }
 
-    const totalUsd = typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
+    const result = await syncOneRegistrationPaymentFromZeffy(supabase, row);
 
-    if (row.payment_status === 'paid') {
-      await sendPaidRegistrationConfirmationIfNeeded(supabase, row.id);
-      return NextResponse.json({
-        registrationId: row.id,
-        paymentStatus: 'paid',
-        amountUsd: totalUsd,
-        providerStatus: 'paid',
-      });
+    if (result.outcome === 'error') {
+      return NextResponse.json({ error: result.message }, { status: result.httpStatus });
     }
 
-    if (!row.email) {
-      return NextResponse.json({ error: 'Registration email unavailable.' }, { status: 500 });
-    }
-
-    const match = await trustedZeffyPaymentForPendingRegistration({
-      email: row.email.trim().toLowerCase(),
-      expectedUsd: totalUsd,
-      checkoutToken: row.checkout_correlation_reference,
-    });
-
-    if ('error' in match) {
-      return NextResponse.json({ error: match.error }, { status: 503 });
-    }
-
-    if ('notFoundReason' in match) {
-      return NextResponse.json({
-        registrationId: row.id,
-        paymentStatus: row.payment_status,
-        syncStatus: 'pending',
-        reason: match.notFoundReason,
-      });
-    }
-
-    const fin = await finalizeRegistrationPaymentForRow(supabase, row, match.paymentId, match.amountCents);
-
-    if (fin.outcome === 'rejected') {
+    if (result.outcome === 'rejected') {
       return NextResponse.json(
         {
-          registrationId: row.id,
+          registrationId: result.registrationId,
           paymentStatus: 'failed',
           syncStatus: 'rejected',
-          reason: fin.reason,
+          reason: result.reason,
         },
         { status: 400 },
       );
     }
 
-    if (fin.outcome === 'db_error') {
-      return NextResponse.json({ error: fin.message }, { status: 500 });
+    if (result.outcome === 'pending') {
+      return NextResponse.json({
+        registrationId: result.registrationId,
+        paymentStatus: 'pending',
+        syncStatus: 'pending',
+        reason: result.reason,
+      });
     }
 
-    await sendPaidRegistrationConfirmationIfNeeded(supabase, fin.registrationId);
-
     return NextResponse.json({
-      registrationId: fin.registrationId,
+      registrationId: result.registrationId,
       paymentStatus: 'paid',
-      amountUsd: totalUsd,
-      providerPaymentId: match.paymentId,
+      amountUsd: result.amountUsd,
+      ...(result.alreadyPaid ? { providerStatus: 'paid' } : { providerPaymentId: result.providerPaymentId }),
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Verification failed';

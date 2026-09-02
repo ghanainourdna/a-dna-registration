@@ -6,15 +6,27 @@ export function roundMoney(value: number): number {
 }
 
 export const REGISTRATION_PRICES_USD = {
-  conference_only: 200,
-  student_conference: 100,
-  reception_only: 100,
-  conference_and_reception: 250,
-  conference_and_reception_student: 200,
-  virtual: 100,
+  diaspora_nurses_allied_health: 250,
+  diaspora_physicians: 350,
+  low_moderate_income_nurses_allied_health: 150,
+  reception: 150,
 } as const;
 
 export type RegistrationTier = keyof typeof REGISTRATION_PRICES_USD;
+
+/** Conference tickets always shown; Reception is student-only. */
+export const BASE_REGISTRATION_TIERS = [
+  'diaspora_nurses_allied_health',
+  'diaspora_physicians',
+  'low_moderate_income_nurses_allied_health',
+] as const satisfies readonly RegistrationTier[];
+
+export const STUDENT_ONLY_REGISTRATION_TIERS = [
+  'reception',
+] as const satisfies readonly RegistrationTier[];
+
+export const DEFAULT_REGISTRATION_TIER: RegistrationTier =
+  'diaspora_nurses_allied_health';
 
 export const ROOM_BLOCK = {
   name: 'Residence Inn by Marriott Baltimore at The Johns Hopkins Medical Campus',

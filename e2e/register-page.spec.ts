@@ -20,22 +20,23 @@ test.describe('Conference registration page', () => {
   });
 
   test('loads with conference registration title', async ({ page }) => {
-    await expect(page).toHaveTitle(/Conference Registration · A-DNA Global Conference USA 2026/);
+    await expect(page).toHaveTitle(/Conference Registration · A-DNA Ghana Conference 2027/);
   });
 
   test('renders hero and checkout messaging', async ({ page }) => {
     await expect(page.locator('#register-hero-title')).toBeVisible();
     await expect(page.getByRole('heading', { level: 1 })).toContainText(
-      'A-DNA Global Conference USA',
+      'A-DNA Ghana Conference 2027',
     );
     await expect(page.getByText('Registration open')).toBeVisible();
-    await expect(page.getByText('Voices of Change:', { exact: false })).toBeVisible();
+    await expect(page.getByText('The Future Of African HealthCare', { exact: false })).toBeVisible();
+    await expect(page.getByText(/Diaspora Partnership for sustainable Impact/)).toBeVisible();
     await expect(page.getByRole('list', { name: 'Conference details' })).toBeVisible();
-    await expect(page.getByText('August 21–22, 2026')).toBeVisible();
+    await expect(page.getByText('7–9 January 2027')).toBeVisible();
     await expect(
       page
         .getByRole('list', { name: 'Conference details' })
-        .getByText(/Johns Hopkins Medical Campus · Baltimore, MD/),
+        .getByText(/Kofi Ohene-Konadu Auditorium, UPSA, Accra, Ghana/),
     ).toBeVisible();
     await expect(page.getByText(/Secure checkout with Zeffy/)).toBeVisible();
     await expect(page.getByRole('img', { name: /A-DNA community members gathered for the conference/i })).toBeVisible();
@@ -64,6 +65,29 @@ test.describe('Conference registration page', () => {
       0,
     );
     await expect(page.locator('#registration-field-country')).toBeEnabled();
+  });
+
+  test('country list can switch between African countries and all countries', async ({
+    page,
+  }) => {
+    const country = page.locator('#registration-field-country');
+    const africa = page.getByRole('radio', { name: 'African countries' });
+    const all = page.getByRole('radio', { name: 'All countries' });
+
+    await page.locator('button[data-section-nav="location"]').click();
+    await expect(africa).toBeChecked();
+    await expect(country.locator('option[value="GH"]')).toHaveCount(1);
+    await expect(country.locator('option[value="NG"]')).toHaveCount(1);
+    await expect(country.locator('option[value="KE"]')).toHaveCount(1);
+    await expect(country.locator('option[value="ZA"]')).toHaveCount(1);
+    await expect(country.locator('option[value="EG"]')).toHaveCount(1);
+    await expect(country.locator('option[value="US"]')).toHaveCount(0);
+
+    await all.click();
+    await expect(all).toBeChecked();
+    await expect(country.locator('option[value="GH"]')).toHaveCount(1);
+    await expect(country.locator('option[value="NG"]')).toHaveCount(1);
+    await expect(country.locator('option[value="US"]')).toHaveCount(1);
   });
 
   test('registration form shell and all sections mount', async ({ page }) => {

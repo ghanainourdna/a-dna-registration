@@ -6,7 +6,7 @@ export default function RegisterFailedPage() {
       <div className="mx-auto mt-12 max-w-lg rounded-2xl border border-amber-200 bg-white px-8 py-10 shadow-sm">
         <h1 className="font-sans text-xl font-semibold leading-snug tracking-tight text-stone-900 sm:text-2xl">Payment interrupted</h1>
         <p className="mt-4 text-sm leading-relaxed text-stone-700">
-          Your booking was not completed. Funds are not settled until checkout finishes successfully — you may restart the
+          Your booking was not completed. Funds are not settled until checkout finishes successfully. You may restart the
           process with the same email if your enrollment is still pending.
         </p>
         <p className="mt-6 text-xs text-stone-500">

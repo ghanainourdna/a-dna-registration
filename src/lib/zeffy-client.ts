@@ -183,7 +183,7 @@ export async function zeffyListRecentSucceededUsdPayments(limitPages = 8): Promi
   const campaignId = process.env.ZEFFY_CAMPAIGN_ID?.trim();
   const collected: Record<string, unknown>[] = [];
 
-  /** Try contact-scoped pagination first returns nothing — caller may filter broadly */
+  /** Try contact-scoped pagination first returns nothing - caller may filter broadly */
   const baseFilters: Record<string, string> = {
     currency: 'usd',
     status: 'succeeded',

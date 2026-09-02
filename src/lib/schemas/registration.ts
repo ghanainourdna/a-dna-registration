@@ -58,12 +58,10 @@ export const heardAboutOptions = [
 ] as const;
 
 export const registrationTierSchema = z.enum([
-  'conference_only',
-  'student_conference',
-  'reception_only',
-  'conference_and_reception',
-  'conference_and_reception_student',
-  'virtual',
+  'diaspora_nurses_allied_health',
+  'diaspora_physicians',
+  'low_moderate_income_nurses_allied_health',
+  'reception',
 ]);
 
 const registrationTierLiterals = registrationTierSchema.Enum;
@@ -107,44 +105,11 @@ export const registrationFormSchema = z
     registration_type: registrationTierSchema,
   })
   .superRefine((data, ctx) => {
-    if (data.needs_housing === 'yes') {
-      if (!data.room_type) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Select a room type',
-          path: ['room_type'],
-        });
-      }
-      if (!data.occupancy_type) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Select single or shared occupancy',
-          path: ['occupancy_type'],
-        });
-      }
-    }
-
-    const tier = data.registration_type;
-
-    const studentDiscountTier =
-      tier === registrationTierLiterals.student_conference ||
-      tier === registrationTierLiterals.conference_and_reception_student;
-    const allowedWhenStudent =
-      studentDiscountTier || tier === registrationTierLiterals.virtual;
-    if (data.is_student && !allowedWhenStudent) {
+    if (data.registration_type === registrationTierLiterals.reception && !data.is_student) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Select a student registration option.',
+        message: 'Reception registration is available to students only.',
         path: ['registration_type'],
-      });
-    }
-
-    const requiresStudentStatus = studentDiscountTier;
-    if (requiresStudentStatus && !data.is_student) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Student registration requires student status.',
-        path: ['is_student'],
       });
     }
   });
@@ -154,34 +119,19 @@ export type RegistrationFormValues = z.infer<typeof registrationFormSchema>;
 
 /**
  * Cross-field rules that live in `superRefine`. Zod only runs `superRefine` when the
- * object shape already parses, so empty required strings would hide housing/student
+ * object shape already parses, so empty required strings would hide student
  * errors during partial form fills. Field validators call this first.
  */
 export function registrationCrossFieldMessage(
   key: keyof RegistrationFormValues,
   data: RegistrationFormValues,
 ): string | undefined {
-  if (data.needs_housing === 'yes') {
-    if (key === 'room_type' && !data.room_type) {
-      return 'Select a room type';
-    }
-    if (key === 'occupancy_type' && !data.occupancy_type) {
-      return 'Select single or shared occupancy';
-    }
-  }
-
-  const tier = data.registration_type;
-  const studentDiscountTier =
-    tier === registrationTierLiterals.student_conference ||
-    tier === registrationTierLiterals.conference_and_reception_student;
-  const allowedWhenStudent =
-    studentDiscountTier || tier === registrationTierLiterals.virtual;
-
-  if (key === 'registration_type' && data.is_student && !allowedWhenStudent) {
-    return 'Select a student registration option.';
-  }
-  if (key === 'is_student' && studentDiscountTier && !data.is_student) {
-    return 'Student registration requires student status.';
+  if (
+    (key === 'registration_type' || key === 'is_student') &&
+    data.registration_type === registrationTierLiterals.reception &&
+    !data.is_student
+  ) {
+    return 'Reception registration is available to students only.';
   }
 
   return undefined;
@@ -225,13 +175,12 @@ export function registrationFieldValidators(
 }
 
 export function summarizeForPersistence(values: RegistrationFormValues) {
-  const needsHousing = values.needs_housing === 'yes';
   const tier = values.registration_type as RegistrationTier;
   const totals = totalAmountUsd({
     registrationTier: tier,
-    needsHousing,
-    roomType: needsHousing ? (values.room_type as RoomTypeCode) : null,
-    occupancy: needsHousing ? (values.occupancy_type as 'single' | 'shared') : null,
+    needsHousing: false,
+    roomType: null,
+    occupancy: null,
   });
 
   const professional_role_label = formatProfessionalRole(values);
@@ -257,9 +206,9 @@ export function summarizeForPersistence(values: RegistrationFormValues) {
       dietary_requirements: dietary_label,
       accessibility_needs: accessibility_label,
       additional_notes: normalizeOptional(values.additional_notes),
-      needs_housing: needsHousing,
-      room_type: needsHousing ? values.room_type! : null,
-      occupancy_type: needsHousing ? values.occupancy_type! : null,
+      needs_housing: false,
+      room_type: null,
+      occupancy_type: null,
       heard_about_us: heardAboutLabels(values),
       instagram_handle: normalizeOptional(values.instagram_handle),
       x_handle: normalizeOptional(values.x_handle),
