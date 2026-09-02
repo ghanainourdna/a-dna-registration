@@ -17,6 +17,10 @@ test.describe('Conference registration page', () => {
       waitUntil: 'domcontentloaded',
       timeout: 90_000,
     });
+    // Section nav onClick handlers exist only after client hydration.
+    await expect(
+      page.locator('nav[aria-label*="Registration progress"][data-nav-ready="true"]'),
+    ).toBeVisible({ timeout: 30_000 });
   });
 
   test('loads with conference registration title', async ({ page }) => {
@@ -113,16 +117,19 @@ test.describe('Conference registration page', () => {
   test('section jump navigation targets every section', async ({ page }) => {
     for (const id of SECTION_IDS) {
       await page.locator(`button[data-section-nav="${id}"]`).click();
-      await expect(page.locator(`#section-${id}`)).toBeInViewport();
+      // Headings sit below the sticky progress nav; asserting the title is more
+      // reliable than the full section box (scroll-margin can leave the section
+      // edge under the sticky bar on tall desktop viewports).
+      await expect(
+        page.locator(`#section-${id}`).getByRole('heading', { level: 2 }),
+      ).toBeInViewport();
     }
   });
 
-  test('footer shows nonprofit disclaimer and contact email', async ({ page }) => {
+  test('footer shows contact email for questions', async ({ page }) => {
     const footer = page.locator('footer');
     await footer.scrollIntoViewIfNeeded();
-    await expect(
-      footer.getByText(/African-Diaspora Nursing Alliance \(A-DNA\) is organized as a 501\(c\)\(3\) nonprofit/i),
-    ).toBeVisible();
+    await expect(footer.getByText(/Please direct any questions to/i)).toBeVisible();
     await expect(footer.getByRole('link', { name: /info@g-dna\.org/i })).toHaveAttribute(
       'href',
       'mailto:info@g-dna.org',

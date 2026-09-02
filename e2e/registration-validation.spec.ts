@@ -6,6 +6,9 @@ test.describe('Registration validation interactions', () => {
       waitUntil: 'domcontentloaded',
       timeout: 90_000,
     });
+    await expect(
+      page.locator('nav[aria-label*="Registration progress"][data-nav-ready="true"]'),
+    ).toBeVisible({ timeout: 30_000 });
   });
 
   test('heard-about option toggles update aria-checked and clear required error after submit', async ({

@@ -547,14 +547,21 @@ export function RegistrationForm({
   const countryListReady = countries.length > 0;
   const [activeSection, setActiveSection] = useState(SECTIONS[0]!.id);
   const [status, setStatus] = useState<"idle" | "saving" | "pay">("idle");
+  const [navHydrated, setNavHydrated] = useState(false);
   const [formMessage, setFormMessage] = useState<{
     type: "error" | "success";
     text: string;
   } | null>(null);
 
+  useEffect(() => {
+    setNavHydrated(true);
+  }, []);
+
   /** Keeps the active step pill in view as the user scrolls the form (IntersectionObserver updates `activeSection`). */
   const sectionNavScrollRef = useRef<HTMLDivElement>(null);
   const skipSectionNavScrollOnMount = useRef(true);
+  /** Ignore IO updates while a nav click is scrolling — otherwise mid-scroll the observer resets the step and sticky-pill `scrollIntoView` cancels the jump. */
+  const suppressSectionObserverUntilRef = useRef(0);
 
   const activeIndex = SECTIONS.findIndex((s) => s.id === activeSection);
   const resolvedIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -562,6 +569,20 @@ export function RegistrationForm({
     SECTIONS.length > 0
       ? Math.min(100, ((resolvedIndex + 1) / SECTIONS.length) * 100)
       : 0;
+
+  const jumpToSection = (sectionId: string) => {
+    const el = document.getElementById(`section-${sectionId}`);
+    if (!el) return;
+
+    // Instant jumps avoid chained smooth-scroll races (clicking the next pill
+    // while the previous animation is still running cancels the new target).
+    suppressSectionObserverUntilRef.current = Date.now() + 400;
+    el.scrollIntoView({ behavior: "auto", block: "start" });
+    setActiveSection(sectionId);
+    window.setTimeout(() => {
+      suppressSectionObserverUntilRef.current = 0;
+    }, 400);
+  };
 
   useEffect(() => {
     if (skipSectionNavScrollOnMount.current) {
@@ -575,8 +596,14 @@ export function RegistrationForm({
     );
     if (!btn) return;
     const behavior: ScrollBehavior = motionUi.reduced ? "auto" : "smooth";
+    // Scroll only the pill strip — element.scrollIntoView on a sticky child can move the document and fight section jumps.
     requestAnimationFrame(() => {
-      btn.scrollIntoView({ behavior, block: "nearest", inline: "center" });
+      const navRect = nav.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      const delta =
+        btnRect.left + btnRect.width / 2 - (navRect.left + navRect.width / 2);
+      if (Math.abs(delta) < 2) return;
+      nav.scrollBy({ left: delta, behavior });
     });
   }, [activeSection, motionUi.reduced]);
 
@@ -600,6 +627,7 @@ export function RegistrationForm({
 
       io = new IntersectionObserver(
         (entries) => {
+          if (Date.now() < suppressSectionObserverUntilRef.current) return;
           const intersecting = entries.filter((e) => e.isIntersecting);
           if (intersecting.length === 0) return;
           const best = intersecting.reduce((a, b) =>
@@ -741,6 +769,7 @@ export function RegistrationForm({
         <nav
           className="sticky top-0 z-40 -mx-4 border-b border-stone-200/80 bg-[#f6f7f9]/98 px-4 pb-4 pt-3 shadow-[0_6px_12px_-8px_rgba(15,23,42,0.12)] backdrop-blur-md supports-[backdrop-filter]:bg-[#f6f7f9]/90 sm:-mx-6 sm:px-6 md:-mx-10 md:px-10"
           aria-label="Registration progress and section navigation"
+          data-nav-ready={navHydrated ? "true" : "false"}
         >
           <div className="mb-3">
             <div className="min-w-0 flex-1">
@@ -793,12 +822,7 @@ export function RegistrationForm({
                   key={s.id}
                   type="button"
                   data-section-nav={s.id}
-                  onClick={() => {
-                    document
-                      .getElementById(`section-${s.id}`)
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    setActiveSection(s.id);
-                  }}
+                  onClick={() => jumpToSection(s.id)}
                   whileHover={motionUi.reduced ? undefined : { y: -1 }}
                   whileTap={motionUi.reduced ? undefined : { scale: 0.985 }}
                   transition={motionUi.micro}
@@ -1905,7 +1929,7 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={`section-${id}`} className="scroll-mt-36">
+    <section id={`section-${id}`} className="scroll-mt-52">
       <div className="relative overflow-hidden rounded-2xl border border-stone-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.08)] ring-1 ring-stone-950/[0.03] md:rounded-[1.35rem]">
         <div className="flex h-2.5 shrink-0" aria-hidden role="presentation">
           <span className="flex-1 bg-red-800" />
