@@ -1,9 +1,26 @@
 import { InvalidConferenceError } from '@/lib/errors';
-import { createClient } from '@supabase/supabase-js';
+import { getConferenceRegistrationConfig } from '@/lib/pricing';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export const DEFAULT_CONFERENCE_SLUG = 'ghana-2027';
 
 export type ConferenceWorldCountry = 'africa' | 'all';
+
+export type ConferenceRow = {
+  id: string;
+  slug: string;
+  title: string;
+  tagline?: string | null;
+  theme?: string | null;
+  dates_label: string;
+  location_label: string;
+  reception_label?: string | null;
+  zeffy_checkout_url?: string | null;
+  zeffy_campaign_id?: string | null;
+  world_country?: string | null;
+  housing_enabled?: boolean | null;
+  is_active?: boolean;
+};
 
 export type Conference = {
   id: string | null;
@@ -15,7 +32,9 @@ export type Conference = {
   location_label: string;
   reception_label: string;
   zeffy_checkout_url: string | null;
+  zeffy_campaign_id: string | null;
   world_country: ConferenceWorldCountry;
+  housing_enabled: boolean;
   is_active: boolean;
 };
 
@@ -28,6 +47,9 @@ export function normalizeWorldCountry(
 export const USA_2026_CONFERENCE_SLUG = 'usa-2026';
 export const GHANA_2027_CONFERENCE_SLUG = 'ghana-2027';
 
+const CONFERENCE_CATALOG_SELECT =
+  'id,slug,title,tagline,theme,dates_label,location_label,reception_label,zeffy_checkout_url,zeffy_campaign_id,world_country,housing_enabled,is_active';
+
 /** Used when the conferences table is not migrated yet, or for E2E without Supabase. */
 export const DEFAULT_USA_2026_CONFERENCE: Conference = {
   id: null,
@@ -39,7 +61,9 @@ export const DEFAULT_USA_2026_CONFERENCE: Conference = {
   location_label: 'Johns Hopkins Medical Campus · Baltimore, MD',
   reception_label: 'Reception · Aug 22, 6:00 PM',
   zeffy_checkout_url: null,
+  zeffy_campaign_id: null,
   world_country: 'all',
+  housing_enabled: true,
   is_active: true,
 };
 
@@ -53,7 +77,9 @@ export const DEFAULT_GHANA_2027_CONFERENCE: Conference = {
   location_label: 'Kofi Ohene-Konadu Auditorium, UPSA, Accra, Ghana',
   reception_label: '',
   zeffy_checkout_url: null,
+  zeffy_campaign_id: null,
   world_country: 'africa',
+  housing_enabled: false,
   is_active: true,
 };
 
@@ -75,6 +101,39 @@ export function isReservedRegisterSlug(slug: string): boolean {
   return slug === 'success' || slug === 'failed';
 }
 
+export function envKeyForConferenceSlug(prefix: string, slug: string): string {
+  return `${prefix}_${slug.replace(/-/g, '_').toUpperCase()}`;
+}
+
+export function resolveConferenceZeffyCampaignId(
+  slug: string,
+  dbCampaignId?: string | null,
+): string | null {
+  const fromDb = dbCampaignId?.trim();
+  if (fromDb) return fromDb;
+  const fromSlug = process.env[envKeyForConferenceSlug('ZEFFY_CAMPAIGN_ID', slug)]?.trim();
+  if (fromSlug) return fromSlug;
+  if (slug === DEFAULT_CONFERENCE_SLUG || slug === GHANA_2027_CONFERENCE_SLUG) {
+    return process.env.ZEFFY_CAMPAIGN_ID?.trim() || null;
+  }
+  return null;
+}
+
+export function resolveConferenceCheckoutUrl(opts: {
+  slug: string;
+  dbUrl?: string | null;
+  defaultEnvUrl: string;
+}): string {
+  const fromDb = opts.dbUrl?.trim();
+  if (fromDb) return fromDb;
+  const fromSlug = process.env[envKeyForConferenceSlug('NEXT_PUBLIC_ZEFFY_CHECKOUT_URL', opts.slug)]?.trim();
+  if (fromSlug) return fromSlug;
+  if (opts.slug === DEFAULT_CONFERENCE_SLUG || opts.slug === GHANA_2027_CONFERENCE_SLUG) {
+    return opts.defaultEnvUrl;
+  }
+  throw new Error(`Zeffy checkout URL is not configured for ${opts.slug}.`);
+}
+
 function createCatalogClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   if (!url) return null;
@@ -87,19 +146,7 @@ function createCatalogClient() {
   });
 }
 
-function mapConferenceRow(row: {
-  id?: string;
-  slug: string;
-  title: string;
-  tagline?: string | null;
-  theme?: string | null;
-  dates_label: string;
-  location_label: string;
-  reception_label?: string | null;
-  zeffy_checkout_url?: string | null;
-  world_country?: string | null;
-  is_active?: boolean;
-}): Conference {
+function mapConferenceRow(row: ConferenceRow): Conference {
   return {
     id: row.id ?? null,
     slug: row.slug,
@@ -110,7 +157,12 @@ function mapConferenceRow(row: {
     location_label: row.location_label,
     reception_label: row.reception_label?.trim() || '',
     zeffy_checkout_url: row.zeffy_checkout_url?.trim() || null,
+    zeffy_campaign_id: row.zeffy_campaign_id?.trim() || null,
     world_country: normalizeWorldCountry(row.world_country),
+    housing_enabled:
+      typeof row.housing_enabled === 'boolean'
+        ? row.housing_enabled
+        : getConferenceRegistrationConfig(row.slug).housingEnabled,
     is_active: row.is_active !== false,
   };
 }
@@ -135,9 +187,7 @@ export async function fetchConferenceBySlug(slugInput?: string | null): Promise<
 
     const { data, error } = await supabase
       .from('conferences')
-      .select(
-        'id,slug,title,tagline,theme,dates_label,location_label,reception_label,zeffy_checkout_url,world_country,is_active',
-      )
+      .select(CONFERENCE_CATALOG_SELECT)
       .eq('slug', slug)
       .eq('is_active', true)
       .maybeSingle();
@@ -147,11 +197,12 @@ export async function fetchConferenceBySlug(slugInput?: string | null): Promise<
       return fallbackConference(slug);
     }
 
-    if (!data) {
+    const row = data as ConferenceRow | null;
+    if (!row) {
       return fallbackConference(slug);
     }
 
-    return mapConferenceRow(data);
+    return mapConferenceRow(row);
   } catch (e) {
     console.error('[conferences]', e);
     return fallbackConference(slug);
@@ -159,15 +210,13 @@ export async function fetchConferenceBySlug(slugInput?: string | null): Promise<
 }
 
 export async function requireConferenceBySlug(
-  supabase: { from: ReturnType<typeof createClient>['from'] },
+  supabase: SupabaseClient,
   slugInput?: string | null,
 ): Promise<{ id: string; conference: Conference }> {
   const slug = normalizeConferenceSlug(slugInput);
   const { data, error } = await supabase
     .from('conferences')
-    .select(
-      'id,slug,title,tagline,theme,dates_label,location_label,reception_label,zeffy_checkout_url,world_country,is_active',
-    )
+    .select(CONFERENCE_CATALOG_SELECT)
     .eq('slug', slug)
     .eq('is_active', true)
     .maybeSingle();
@@ -175,11 +224,13 @@ export async function requireConferenceBySlug(
   if (error) {
     throw new Error(error.message);
   }
-  if (!data?.id) {
+
+  const row = data as ConferenceRow | null;
+  if (!row?.id) {
     throw new InvalidConferenceError();
   }
 
-  return { id: data.id as string, conference: mapConferenceRow(data) };
+  return { id: row.id, conference: mapConferenceRow(row) };
 }
 
 export { InvalidConferenceError };
