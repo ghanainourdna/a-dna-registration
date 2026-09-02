@@ -113,12 +113,15 @@ export const registrationFormSchema = z
     other_social: z.string().trim().optional().or(z.literal('')),
     registration_type: registrationTierSchema,
     conference_slug: z.string().trim().min(1).optional(),
+    conference_housing_enabled: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     const slug = normalizeConferenceSlug(data.conference_slug);
     const config = getConferenceRegistrationConfig(slug);
 
-    if (config.housingEnabled && data.needs_housing === 'yes') {
+    const housingEnabled = data.conference_housing_enabled ?? config.housingEnabled;
+
+    if (housingEnabled && data.needs_housing === 'yes') {
       if (!data.room_type) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -163,7 +166,9 @@ export function registrationCrossFieldMessage(
   const slug = normalizeConferenceSlug(data.conference_slug);
   const config = getConferenceRegistrationConfig(slug);
 
-  if (config.housingEnabled && data.needs_housing === 'yes') {
+  const housingEnabled = data.conference_housing_enabled ?? config.housingEnabled;
+
+  if (housingEnabled && data.needs_housing === 'yes') {
     if (key === 'room_type' && !data.room_type) {
       return 'Select a room type';
     }
@@ -227,11 +232,13 @@ export function registrationFieldValidators(
 export function summarizeForPersistence(
   values: RegistrationFormValues,
   conferenceSlug = values.conference_slug ?? DEFAULT_CONFERENCE_SLUG,
+  housingEnabledOverride?: boolean,
 ) {
   const slug = normalizeConferenceSlug(conferenceSlug);
   const config = getConferenceRegistrationConfig(slug);
   const tier = values.registration_type as RegistrationTier;
-  const needsHousing = config.housingEnabled && values.needs_housing === 'yes';
+  const housingEnabled = housingEnabledOverride ?? config.housingEnabled;
+  const needsHousing = housingEnabled && values.needs_housing === 'yes';
   const totals = totalAmountUsd({
     registrationTier: tier,
     needsHousing,

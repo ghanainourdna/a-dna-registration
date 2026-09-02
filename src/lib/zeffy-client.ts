@@ -244,9 +244,12 @@ export async function zeffyFindContactIdByEmail(email: string): Promise<string |
     { query: lower },
   ];
 
+  let successfulRequests = 0;
+  let lastError: unknown;
   for (const qp of attempts) {
     try {
       const env = await zeffyFetchJson('/contacts', qp);
+      successfulRequests += 1;
       const items = unwrapDataArray(env);
       for (const it of items) {
         const r = asRecord(it);
@@ -258,9 +261,14 @@ export async function zeffyFindContactIdByEmail(email: string): Promise<string |
         const e = typeof r?.email === 'string' ? r.email.toLowerCase().trim() : '';
         if (e === lower && typeof r.id === 'string') return r.id.trim();
       }
-    } catch {
+    } catch (error) {
+      lastError = error;
       continue;
     }
+  }
+
+  if (successfulRequests === 0 && lastError) {
+    throw lastError;
   }
 
   return null;
@@ -331,16 +339,16 @@ export async function trustedZeffyPaymentForPendingRegistration(opts: {
       campaignId: opts.campaignId,
       createdGteUnix: opts.createdGteUnix,
     };
-    const contactId = await zeffyFindContactIdByEmail(opts.email).catch(() => null);
+    const contactId = await zeffyFindContactIdByEmail(opts.email);
 
     /** Prefer payments scoped by Zeffy contact id (API filter). */
     const contactScoped =
-      contactId !== null ? await zeffyListPaymentsForContact(contactId, scope).catch(() => []) : [];
+      contactId !== null ? await zeffyListPaymentsForContact(contactId, scope) : [];
 
     /** Fall back to scanning recent succeeded USD payments when contact resolution fails */
     const recent =
       contactScoped.length === 0
-        ? await zeffyListRecentSucceededUsdPayments(scope).catch(() => [])
+        ? await zeffyListRecentSucceededUsdPayments(scope)
         : [];
 
     const candidates = contactScoped.length ? contactScoped : recent;

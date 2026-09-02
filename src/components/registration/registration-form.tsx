@@ -65,6 +65,7 @@ const defaultValues: RegistrationFormValues = {
   other_social: "",
   registration_type: DEFAULT_REGISTRATION_TIER,
   conference_slug: "ghana-2027",
+  conference_housing_enabled: false,
 };
 
 const SECTIONS = [
@@ -547,21 +548,18 @@ export function RegistrationForm({
   const countryListReady = countries.length > 0;
   const [activeSection, setActiveSection] = useState(SECTIONS[0]!.id);
   const [status, setStatus] = useState<"idle" | "saving" | "pay">("idle");
-  const [navHydrated, setNavHydrated] = useState(false);
   const [formMessage, setFormMessage] = useState<{
     type: "error" | "success";
     text: string;
   } | null>(null);
 
-  useEffect(() => {
-    setNavHydrated(true);
-  }, []);
-
   /** Keeps the active step pill in view as the user scrolls the form (IntersectionObserver updates `activeSection`). */
+  const progressNavRef = useRef<HTMLElement>(null);
   const sectionNavScrollRef = useRef<HTMLDivElement>(null);
   const skipSectionNavScrollOnMount = useRef(true);
   /** Ignore IO updates while a nav click is scrolling — otherwise mid-scroll the observer resets the step and sticky-pill `scrollIntoView` cancels the jump. */
-  const suppressSectionObserverUntilRef = useRef(0);
+  const suppressSectionObserverRef = useRef(false);
+  const sectionObserverResumeTimerRef = useRef<number | null>(null);
 
   const activeIndex = SECTIONS.findIndex((s) => s.id === activeSection);
   const resolvedIndex = activeIndex >= 0 ? activeIndex : 0;
@@ -570,17 +568,25 @@ export function RegistrationForm({
       ? Math.min(100, ((resolvedIndex + 1) / SECTIONS.length) * 100)
       : 0;
 
+  useEffect(() => {
+    progressNavRef.current?.setAttribute("data-nav-ready", "true");
+  }, []);
+
   const jumpToSection = (sectionId: string) => {
     const el = document.getElementById(`section-${sectionId}`);
     if (!el) return;
 
     // Instant jumps avoid chained smooth-scroll races (clicking the next pill
     // while the previous animation is still running cancels the new target).
-    suppressSectionObserverUntilRef.current = Date.now() + 400;
+    suppressSectionObserverRef.current = true;
+    if (sectionObserverResumeTimerRef.current !== null) {
+      window.clearTimeout(sectionObserverResumeTimerRef.current);
+    }
     el.scrollIntoView({ behavior: "auto", block: "start" });
     setActiveSection(sectionId);
-    window.setTimeout(() => {
-      suppressSectionObserverUntilRef.current = 0;
+    sectionObserverResumeTimerRef.current = window.setTimeout(() => {
+      suppressSectionObserverRef.current = false;
+      sectionObserverResumeTimerRef.current = null;
     }, 400);
   };
 
@@ -627,7 +633,7 @@ export function RegistrationForm({
 
       io = new IntersectionObserver(
         (entries) => {
-          if (Date.now() < suppressSectionObserverUntilRef.current) return;
+          if (suppressSectionObserverRef.current) return;
           const intersecting = entries.filter((e) => e.isIntersecting);
           if (intersecting.length === 0) return;
           const best = intersecting.reduce((a, b) =>
@@ -650,6 +656,9 @@ export function RegistrationForm({
     return () => {
       narrowMq.removeEventListener("change", connect);
       io?.disconnect();
+      if (sectionObserverResumeTimerRef.current !== null) {
+        window.clearTimeout(sectionObserverResumeTimerRef.current);
+      }
     };
   }, []);
 
@@ -661,8 +670,9 @@ export function RegistrationForm({
         false,
       ),
       conference_slug: conferenceSlug,
+      conference_housing_enabled: housingEnabled,
     }),
-    [conferenceSlug],
+    [conferenceSlug, housingEnabled],
   );
 
   const form = useForm({
@@ -767,9 +777,10 @@ export function RegistrationForm({
     <div className="relative mx-auto grid w-full min-w-0 max-w-[min(115rem,calc(100%-2rem))] gap-8 px-4 pb-24 pt-6 sm:px-6 md:px-10 lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="min-w-0 space-y-8 md:space-y-10">
         <nav
+          ref={progressNavRef}
           className="sticky top-0 z-40 -mx-4 border-b border-stone-200/80 bg-[#f6f7f9]/98 px-4 pb-4 pt-3 shadow-[0_6px_12px_-8px_rgba(15,23,42,0.12)] backdrop-blur-md supports-[backdrop-filter]:bg-[#f6f7f9]/90 sm:-mx-6 sm:px-6 md:-mx-10 md:px-10"
           aria-label="Registration progress and section navigation"
-          data-nav-ready={navHydrated ? "true" : "false"}
+          data-nav-ready="false"
         >
           <div className="mb-3">
             <div className="min-w-0 flex-1">

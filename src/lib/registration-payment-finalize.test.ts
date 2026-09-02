@@ -25,44 +25,35 @@ const ROW: RegistrationPaymentRow = {
 
 describe('finalizeRegistrationPaymentForRow', () => {
   it('does not reuse a Zeffy payment claimed by another registration', async () => {
-    const registrationUpdate = vi.fn();
+    const rpc = vi.fn(async () => ({
+      data: 'payment_already_used',
+      error: null,
+    }));
     const supabase = {
-      from: (table: string) => {
-        if (table === 'provider_payment_audit') {
-          return {
-            insert: () => ({
-              select: () => ({
-                maybeSingle: async () => ({
-                  data: null,
-                  error: { code: '23505', message: 'duplicate key value' },
-                }),
-              }),
-            }),
-            select: () => ({
-              eq: () => ({
-                eq: () => ({
-                  maybeSingle: async () => ({
-                    data: {
-                      id: 'audit-1',
-                      registration_id: '33333333-3333-3333-3333-333333333333',
-                    },
-                    error: null,
-                  }),
-                }),
-              }),
-            }),
-          };
-        }
-        return {
-          update: registrationUpdate,
-        };
-      },
+      rpc,
     };
 
     await expect(
       finalizeRegistrationPaymentForRow(supabase as never, ROW, 'payment-1', 25_000),
     ).resolves.toEqual({ outcome: 'rejected', reason: 'payment_already_used' });
-    expect(registrationUpdate).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith('finalize_zeffy_registration_payment', {
+      p_registration_id: ROW.id,
+      p_external_payment_id: 'payment-1',
+      p_amount_cents: 25_000,
+    });
+  });
+
+  it('rejects a second distinct payment after another finalization wins', async () => {
+    const supabase = {
+      rpc: async () => ({ data: 'registration_already_paid', error: null }),
+    };
+
+    await expect(
+      finalizeRegistrationPaymentForRow(supabase as never, ROW, 'payment-2', 25_000),
+    ).resolves.toEqual({
+      outcome: 'rejected',
+      reason: 'registration_already_paid',
+    });
   });
 });
 

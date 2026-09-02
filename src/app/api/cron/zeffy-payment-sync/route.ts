@@ -43,7 +43,11 @@ async function handleSync(req: NextRequest): Promise<NextResponse> {
     const summary = await syncPendingRegistrationPaymentsFromZeffy(supabase, {
       limit: clampPendingPaymentSyncLimit(limit),
     });
-    return NextResponse.json({ ok: true, ...summary });
+    const missingConfiguration = summary.errors.some((row) =>
+      row.message.includes('Missing ZEFFY_API_KEY'),
+    );
+    const status = missingConfiguration ? 503 : summary.errors.length > 0 ? 502 : 200;
+    return NextResponse.json({ ok: summary.errors.length === 0, ...summary }, { status });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Payment sync failed';
     const status =

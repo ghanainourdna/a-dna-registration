@@ -9,9 +9,11 @@ import { trustedZeffyPaymentForPendingRegistration } from '@/lib/zeffy-client';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export const DEFAULT_PENDING_PAYMENT_SYNC_LIMIT = 50;
-export const MAX_PENDING_PAYMENT_SYNC_LIMIT = 100;
+export const DEFAULT_PENDING_PAYMENT_SYNC_LIMIT = 10;
+export const MAX_PENDING_PAYMENT_SYNC_LIMIT = 25;
 export const PENDING_PAYMENT_RECHECK_MS = 55 * 60 * 1000;
+export const PAYMENT_SYNC_CONCURRENCY = 5;
+export const CONFIRMATION_RETRY_LIMIT = 25;
 
 export function clampPendingPaymentSyncLimit(raw: unknown): number {
   if (typeof raw === 'string' && raw.trim()) {
@@ -161,6 +163,9 @@ export type PendingRegistrationPaymentSyncSummary = {
   paid: number;
   pending: number;
   rejected: number;
+  confirmationRetriesChecked: number;
+  confirmationRetriesSent: number;
+  confirmationRetriesFailed: number;
   errors: Array<{ registrationId: string; message: string }>;
 };
 
@@ -204,6 +209,39 @@ async function markRegistrationsCheckedForPaymentSync(
   }
 }
 
+async function listPaidRegistrationsNeedingConfirmation(
+  supabase: SupabaseClient,
+  limit: number,
+): Promise<Array<{ id: string }>> {
+  const { data, error } = await supabase
+    .from('conference_registrations')
+    .select('id')
+    .eq('payment_status', 'paid')
+    .is('confirmation_email_sent_at', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<{ id: string }>;
+}
+
+async function mapWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, concurrency), items.length) },
+    async () => {
+      while (next < items.length) {
+        const item = items[next++]!;
+        await work(item);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
 /**
  * Pull succeeded Zeffy payments for pending conference registrations and mark matching rows paid.
  * Safe to run from cron or a manual authenticated request.
@@ -223,10 +261,13 @@ export async function syncPendingRegistrationPaymentsFromZeffy(
     paid: 0,
     pending: 0,
     rejected: 0,
+    confirmationRetriesChecked: 0,
+    confirmationRetriesSent: 0,
+    confirmationRetriesFailed: 0,
     errors: [],
   };
 
-  for (const row of rows) {
+  await mapWithConcurrency(rows, PAYMENT_SYNC_CONCURRENCY, async (row) => {
     try {
       const result = await syncOneRegistrationPaymentFromZeffy(supabase, row, deps);
       if (result.outcome === 'paid') {
@@ -244,7 +285,35 @@ export async function syncPendingRegistrationPaymentsFromZeffy(
         message: e instanceof Error ? e.message : 'Unexpected sync error',
       });
     }
-  }
+  });
+
+  const confirmationRows = await listPaidRegistrationsNeedingConfirmation(
+    supabase,
+    CONFIRMATION_RETRY_LIMIT,
+  );
+  summary.confirmationRetriesChecked = confirmationRows.length;
+  await mapWithConcurrency(
+    confirmationRows,
+    PAYMENT_SYNC_CONCURRENCY,
+    async ({ id }) => {
+      try {
+        if (await deps.sendConfirmation(supabase, id)) {
+          summary.confirmationRetriesSent += 1;
+        } else {
+          summary.confirmationRetriesFailed += 1;
+          summary.errors.push({
+            registrationId: id,
+            message: 'Confirmation email was not sent.',
+          });
+        }
+      } catch (error) {
+        summary.errors.push({
+          registrationId: id,
+          message: error instanceof Error ? error.message : 'Confirmation retry failed',
+        });
+      }
+    },
+  );
 
   return summary;
 }

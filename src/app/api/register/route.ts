@@ -3,9 +3,14 @@ import {
   DuplicateRegistrationError,
   InvalidConferenceError,
   InvalidCountryError,
+  InvalidHousingSelectionError,
   InvalidRegistrationTierError,
 } from '@/lib/errors';
-import { isRegistrationTierAllowedForConference, type RegistrationTier } from '@/lib/pricing';
+import {
+  hasConferenceRegistrationConfig,
+  isRegistrationTierAllowedForConference,
+  type RegistrationTier,
+} from '@/lib/pricing';
 import type { RegistrationFormValues } from '@/lib/schemas/registration';
 import { registrationFormSchema, summarizeForPersistence } from '@/lib/schemas/registration';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
@@ -27,15 +32,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
   }
 
-  const parsed = registrationFormSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: 'Validation failed', issues: parsed.error.flatten() }, { status: 400 });
-  }
-
   const conferenceSlug =
     body && typeof body === 'object' && 'conference_slug' in body && typeof body.conference_slug === 'string'
       ? body.conference_slug
       : undefined;
+  if (!hasConferenceRegistrationConfig(conferenceSlug)) {
+    return NextResponse.json({ error: 'Registration is not configured for this conference.' }, { status: 400 });
+  }
+
+  const parsed = registrationFormSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Validation failed', issues: parsed.error.flatten() }, { status: 400 });
+  }
 
   try {
     const result = await saveRegistration(parsed.data, conferenceSlug);
@@ -44,7 +52,8 @@ export async function POST(req: NextRequest) {
     if (
       e instanceof InvalidCountryError ||
       e instanceof InvalidConferenceError ||
-      e instanceof InvalidRegistrationTierError
+      e instanceof InvalidRegistrationTierError ||
+      e instanceof InvalidHousingSelectionError
     ) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
@@ -57,8 +66,6 @@ export async function POST(req: NextRequest) {
 }
 
 async function saveRegistration(values: RegistrationFormValues, conferenceSlug?: string) {
-  const { email, payload } = summarizeForPersistence(values);
-
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
     supabase = getSupabaseAdmin();
@@ -82,6 +89,19 @@ async function saveRegistration(values: RegistrationFormValues, conferenceSlug?:
   ) {
     throw new InvalidRegistrationTierError();
   }
+  if (
+    conference.housing_enabled &&
+    values.needs_housing === 'yes' &&
+    (!values.room_type || !values.occupancy_type)
+  ) {
+    throw new InvalidHousingSelectionError();
+  }
+
+  const { email, payload } = summarizeForPersistence(
+    values,
+    conference.slug,
+    conference.housing_enabled,
+  );
 
   const { data: existing } = await supabase
     .from('conference_registrations')

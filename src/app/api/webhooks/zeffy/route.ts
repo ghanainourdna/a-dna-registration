@@ -97,8 +97,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       .maybeSingle();
     if (audit?.registration_id) {
       await sendPaidRegistrationConfirmationIfNeeded(supabase, audit.registration_id as string);
+      return new Response(null, { status: 200 });
     }
-    return new Response(null, { status: 200 });
   }
 
   if (insertError) {

@@ -1,5 +1,8 @@
 import { InvalidConferenceError } from '@/lib/errors';
-import { getConferenceRegistrationConfig } from '@/lib/pricing';
+import {
+  getConferenceRegistrationConfig,
+  hasConferenceRegistrationConfig,
+} from '@/lib/pricing';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export const DEFAULT_CONFERENCE_SLUG = 'ghana-2027';
@@ -175,6 +178,7 @@ function mapConferenceRow(row: ConferenceRow): Conference {
 export async function fetchConferenceBySlug(slugInput?: string | null): Promise<Conference | null> {
   const slug = normalizeConferenceSlug(slugInput);
   if (isReservedRegisterSlug(slug)) return null;
+  if (!hasConferenceRegistrationConfig(slug)) return null;
 
   if (process.env.E2E_FIXTURE_COUNTRIES === '1') {
     const conference = fallbackConference(slug);
@@ -217,6 +221,9 @@ export async function requireConferenceBySlug(
   slugInput?: string | null,
 ): Promise<{ id: string; conference: Conference }> {
   const slug = normalizeConferenceSlug(slugInput);
+  if (!hasConferenceRegistrationConfig(slug)) {
+    throw new InvalidConferenceError();
+  }
   const { data: rawData, error } = await supabase
     .from('conferences')
     .select(CONFERENCE_CATALOG_SELECT)

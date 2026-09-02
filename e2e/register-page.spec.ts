@@ -17,7 +17,6 @@ test.describe('Conference registration page', () => {
       waitUntil: 'domcontentloaded',
       timeout: 90_000,
     });
-    // Section nav onClick handlers exist only after client hydration.
     await expect(
       page.locator('nav[aria-label*="Registration progress"][data-nav-ready="true"]'),
     ).toBeVisible({ timeout: 30_000 });
@@ -117,9 +116,6 @@ test.describe('Conference registration page', () => {
   test('section jump navigation targets every section', async ({ page }) => {
     for (const id of SECTION_IDS) {
       await page.locator(`button[data-section-nav="${id}"]`).click();
-      // Headings sit below the sticky progress nav; asserting the title is more
-      // reliable than the full section box (scroll-margin can leave the section
-      // edge under the sticky bar on tall desktop viewports).
       await expect(
         page.locator(`#section-${id}`).getByRole('heading', { level: 2 }),
       ).toBeInViewport();

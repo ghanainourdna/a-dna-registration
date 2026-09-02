@@ -160,6 +160,21 @@ describe('registrationFormSchema', () => {
     expect(persisted.payload.needs_housing).toBe(true);
     expect(persisted.payload.housing_amount).toBe(294.34);
   });
+
+  it('uses the conference database housing setting when it overrides the catalog', () => {
+    const values = validBase({
+      conference_slug: 'ghana-2027',
+      conference_housing_enabled: true,
+      needs_housing: 'yes',
+      room_type: 'A',
+      occupancy_type: 'shared',
+    });
+    expect(registrationFormSchema.safeParse(values).success).toBe(true);
+
+    const persisted = summarizeForPersistence(values, 'ghana-2027', true);
+    expect(persisted.payload.needs_housing).toBe(true);
+    expect(persisted.payload.housing_amount).toBe(294.34);
+  });
 });
 
 describe('registrationFieldMessage / validators', () => {

@@ -43,7 +43,7 @@ Copy values from your team or from Vercel project settings. Do not commit real s
 | `ZEFFY_CAMPAIGN_ID` | Ghana 2027 campaign ID fallback; narrows payment reconciliation |
 | `ZEFFY_CAMPAIGN_ID_<SLUG>` | Optional conference-specific campaign ID, e.g. `ZEFFY_CAMPAIGN_ID_USA_2026` |
 | `ZEFFY_WEBHOOK_BEARER` | Optional; `Authorization: Bearer …` for webhooks |
-| `CRON_SECRET` | Required bearer secret for Vercel's hourly payment reconciliation cron |
+| `CRON_SECRET` | Required bearer secret for Vercel's daily payment reconciliation cron |
 | `ZEFFY_SYNC_SECRET` | Optional manual-sync bearer secret when `CRON_SECRET` is unavailable |
 | `RESEND_API_KEY` | Email sending |
 | `EMAIL_FROM` | Resend “from” address |
@@ -51,13 +51,13 @@ Copy values from your team or from Vercel project settings. Do not commit real s
 
 On Vercel, `VERCEL_URL` is set automatically; `NEXT_PUBLIC_APP_URL` should match your production domain in settings.
 
-**Zeffy payment sync:** Webhooks mark a registration `paid` when Zeffy posts `payment.completed`. If that is missed, `/register/success` polls `/api/payment/verify`, and an hourly Vercel Cron at `/api/cron/zeffy-payment-sync` walks pending rows, matches succeeded Zeffy payments by email + amount, and updates `payment_status`. Set `CRON_SECRET` (and `ZEFFY_API_KEY`) in Vercel. Manual run:
+**Zeffy payment sync:** Webhooks mark a registration `paid` when Zeffy posts `payment.completed`. If that is missed, `/register/success` polls `/api/payment/verify`, and a daily Vercel Cron at `/api/cron/zeffy-payment-sync` walks pending rows, retries unsent confirmation emails, matches succeeded Zeffy payments by conference campaign + registration time + email + amount, and updates `payment_status`. Set `CRON_SECRET` (and `ZEFFY_API_KEY`) in Vercel. Manual run:
 
 ```bash
 curl -X POST https://campaign.g-dna.org/api/cron/zeffy-payment-sync \
   -H "Authorization: Bearer $CRON_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"limit": 50}'
+  -d '{"limit": 10}'
 ```
 
 **Zeffy checkout:** Set `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` to the campaign page (for Ghana 2027: [The Future of African Healthcare](https://www.zeffy.com/en-US/ticketing/the-future-of-african-healthcare-diaspora-partnerships-for-sustainable-impact)). All registration types use that one URL unless you later add optional per-tier `ZEFFY_CHECKOUT_URL_*` deep links. After Register & Pay, the attendee picks the matching ticket on Zeffy. Ticket options in the form: Diaspora Nurses/Midwives/Allied Health ($250), Diaspora Physicians ($350), Low- and Moderate-Income Nurses/Midwives/Allied Health ($150), and Reception ($150, students only).
@@ -70,7 +70,7 @@ Set `conferences.zeffy_campaign_id` for every active conference. Reconciliation 
 registration-time lower bound and atomically claims each Zeffy payment ID, preventing an older or
 already-consumed payment from confirming another registration.
 
-Registrations live in `conference_registrations` and belong to a row in `conferences`. Email uniqueness is per conference (`conference_id` + `email`). `/register` is Ghana 2027 (`ghana-2027`). USA 2026 remains at `/register/usa-2026`. Add another event as a new `conferences` row, then use `/register/<slug>`. Set `conferences.world_country` to `africa` or `all` to choose which country list the form loads first.
+Registrations live in `conference_registrations` and belong to a row in `conferences`. Email uniqueness is per conference (`conference_id` + `email`). `/register` is Ghana 2027 (`ghana-2027`). USA 2026 remains at `/register/usa-2026`. To add another event, create its `conferences` row and an explicit entry in `CONFERENCE_REGISTRATION_CONFIG`, then use `/register/<slug>`. Set `conferences.world_country` to `africa` or `all` to choose which country list the form loads first.
 
 ## Scripts
 

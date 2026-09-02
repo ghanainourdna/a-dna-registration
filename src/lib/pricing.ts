@@ -66,11 +66,22 @@ export const CONFERENCE_REGISTRATION_CONFIG: Record<string, ConferenceRegistrati
   },
 };
 
+export function hasConferenceRegistrationConfig(
+  conferenceSlug: string | null | undefined,
+): boolean {
+  const slug = conferenceSlug?.trim().toLowerCase() || 'ghana-2027';
+  return Object.hasOwn(CONFERENCE_REGISTRATION_CONFIG, slug);
+}
+
 export function getConferenceRegistrationConfig(
   conferenceSlug: string | null | undefined,
 ): ConferenceRegistrationConfig {
   const slug = conferenceSlug?.trim().toLowerCase() || 'ghana-2027';
-  return CONFERENCE_REGISTRATION_CONFIG[slug] ?? CONFERENCE_REGISTRATION_CONFIG['ghana-2027']!;
+  const config = CONFERENCE_REGISTRATION_CONFIG[slug];
+  if (!config) {
+    throw new Error(`Registration pricing is not configured for ${slug}.`);
+  }
+  return config;
 }
 
 export function registrationTiersForConference(

@@ -25,3 +25,10 @@ export class InvalidRegistrationTierError extends Error {
     this.name = 'InvalidRegistrationTierError';
   }
 }
+
+export class InvalidHousingSelectionError extends Error {
+  constructor() {
+    super('Select a room type and occupancy for this conference.');
+    this.name = 'InvalidHousingSelectionError';
+  }
+}

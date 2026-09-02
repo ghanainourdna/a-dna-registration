@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { zeffyListRecentSucceededUsdPayments } from '@/lib/zeffy-client';
+import {
+  trustedZeffyPaymentForPendingRegistration,
+  zeffyListRecentSucceededUsdPayments,
+} from '@/lib/zeffy-client';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -25,5 +28,23 @@ describe('Zeffy payment list scoping', () => {
     expect(url.searchParams.get('campaign')).toBe('campaign_ghana_2027');
     expect(url.searchParams.get('created[gte]')).toBe('1777809300');
     expect(url.searchParams.get('status')).toBe('succeeded');
+  });
+
+  it('surfaces Zeffy API failures instead of treating them as no payment', async () => {
+    vi.stubEnv('ZEFFY_API_KEY', 'test-key');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ message: 'upstream unavailable' }), {
+        status: 503,
+      })),
+    );
+
+    await expect(
+      trustedZeffyPaymentForPendingRegistration({
+        email: 'ada@example.com',
+        expectedUsd: 250,
+        campaignId: 'campaign_ghana_2027',
+      }),
+    ).resolves.toEqual({ error: 'upstream unavailable' });
   });
 });

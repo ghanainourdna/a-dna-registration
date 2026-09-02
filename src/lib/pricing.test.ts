@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   defaultRegistrationTierForConference,
+  getConferenceRegistrationConfig,
+  hasConferenceRegistrationConfig,
   isRegistrationTierAllowedForConference,
   registrationTiersForConference,
 } from '@/lib/pricing';
@@ -28,5 +30,12 @@ describe('conference registration tiers', () => {
     expect(isRegistrationTierAllowedForConference('usa-2026', 'student_conference', true)).toBe(true);
     expect(isRegistrationTierAllowedForConference('usa-2026', 'student_conference', false)).toBe(false);
     expect(defaultRegistrationTierForConference('usa-2026', true)).toBe('student_conference');
+  });
+
+  it('rejects active conferences without an explicit ticket catalog', () => {
+    expect(hasConferenceRegistrationConfig('new-event')).toBe(false);
+    expect(() => getConferenceRegistrationConfig('new-event')).toThrow(
+      /pricing is not configured/i,
+    );
   });
 });
