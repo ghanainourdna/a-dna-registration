@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
+import { DEFAULT_CONFERENCE_SLUG, normalizeConferenceSlug } from '@/lib/conferences';
 import {
+  getConferenceRegistrationConfig,
+  isRegistrationTierAllowedForConference,
   type OccupancyType as HousingOccupancy,
   type RegistrationTier,
   type RoomTypeCode,
@@ -58,6 +61,12 @@ export const heardAboutOptions = [
 ] as const;
 
 export const registrationTierSchema = z.enum([
+  'conference_only',
+  'student_conference',
+  'reception_only',
+  'conference_and_reception',
+  'conference_and_reception_student',
+  'virtual',
   'diaspora_nurses_allied_health',
   'diaspora_physicians',
   'low_moderate_income_nurses_allied_health',
@@ -103,12 +112,37 @@ export const registrationFormSchema = z
     facebook_handle: z.string().trim().optional().or(z.literal('')),
     other_social: z.string().trim().optional().or(z.literal('')),
     registration_type: registrationTierSchema,
+    conference_slug: z.string().trim().min(1).optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.registration_type === registrationTierLiterals.reception && !data.is_student) {
+    const slug = normalizeConferenceSlug(data.conference_slug);
+    const config = getConferenceRegistrationConfig(slug);
+
+    if (config.housingEnabled && data.needs_housing === 'yes') {
+      if (!data.room_type) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Select a room type',
+          path: ['room_type'],
+        });
+      }
+      if (!data.occupancy_type) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Select single or shared occupancy',
+          path: ['occupancy_type'],
+        });
+      }
+    }
+
+    if (!isRegistrationTierAllowedForConference(slug, data.registration_type, data.is_student)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Reception registration is available to students only.',
+        message: data.is_student
+          ? 'Select a registration option available to students for this conference.'
+          : data.registration_type === registrationTierLiterals.reception
+            ? 'Reception registration is available to students only.'
+            : 'Select a registration option available for this conference.',
         path: ['registration_type'],
       });
     }
@@ -126,12 +160,28 @@ export function registrationCrossFieldMessage(
   key: keyof RegistrationFormValues,
   data: RegistrationFormValues,
 ): string | undefined {
+  const slug = normalizeConferenceSlug(data.conference_slug);
+  const config = getConferenceRegistrationConfig(slug);
+
+  if (config.housingEnabled && data.needs_housing === 'yes') {
+    if (key === 'room_type' && !data.room_type) {
+      return 'Select a room type';
+    }
+    if (key === 'occupancy_type' && !data.occupancy_type) {
+      return 'Select single or shared occupancy';
+    }
+  }
+
   if (
     (key === 'registration_type' || key === 'is_student') &&
-    data.registration_type === registrationTierLiterals.reception &&
-    !data.is_student
+    !isRegistrationTierAllowedForConference(slug, data.registration_type, data.is_student)
   ) {
-    return 'Reception registration is available to students only.';
+    if (data.registration_type === registrationTierLiterals.reception && !data.is_student) {
+      return 'Reception registration is available to students only.';
+    }
+    return data.is_student
+      ? 'Select a registration option available to students for this conference.'
+      : 'Select a registration option available for this conference.';
   }
 
   return undefined;
@@ -174,13 +224,19 @@ export function registrationFieldValidators(
     : { onChange: validate, onSubmit: validate };
 }
 
-export function summarizeForPersistence(values: RegistrationFormValues) {
+export function summarizeForPersistence(
+  values: RegistrationFormValues,
+  conferenceSlug = values.conference_slug ?? DEFAULT_CONFERENCE_SLUG,
+) {
+  const slug = normalizeConferenceSlug(conferenceSlug);
+  const config = getConferenceRegistrationConfig(slug);
   const tier = values.registration_type as RegistrationTier;
+  const needsHousing = config.housingEnabled && values.needs_housing === 'yes';
   const totals = totalAmountUsd({
     registrationTier: tier,
-    needsHousing: false,
-    roomType: null,
-    occupancy: null,
+    needsHousing,
+    roomType: needsHousing ? values.room_type : null,
+    occupancy: needsHousing ? values.occupancy_type : null,
   });
 
   const professional_role_label = formatProfessionalRole(values);
@@ -206,9 +262,9 @@ export function summarizeForPersistence(values: RegistrationFormValues) {
       dietary_requirements: dietary_label,
       accessibility_needs: accessibility_label,
       additional_notes: normalizeOptional(values.additional_notes),
-      needs_housing: false,
-      room_type: null,
-      occupancy_type: null,
+      needs_housing: needsHousing,
+      room_type: needsHousing ? values.room_type ?? null : null,
+      occupancy_type: needsHousing ? values.occupancy_type ?? null : null,
       heard_about_us: heardAboutLabels(values),
       instagram_handle: normalizeOptional(values.instagram_handle),
       x_handle: normalizeOptional(values.x_handle),
