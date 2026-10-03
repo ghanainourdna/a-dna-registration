@@ -50,12 +50,11 @@ test.describe('Registration validation interactions', () => {
     ).toHaveCount(0);
   });
 
-  test('housing is disabled and does not require a room selection', async ({
+  test('housing is hidden when disabled and does not require a room selection', async ({
     page,
   }) => {
-    await page.locator('button[data-section-nav="housing"]').click();
-    await expect(page.locator('#section-housing')).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: /housing is disabled/i })).toBeVisible();
+    await expect(page.locator('button[data-section-nav="housing"]')).toHaveCount(0);
+    await expect(page.locator('#section-housing')).toHaveCount(0);
     await expect(page.locator('#registration-field-needs_housing')).toHaveCount(0);
     await expect(page.locator('#registration-field-room_type')).toHaveCount(0);
 
@@ -74,9 +73,13 @@ test.describe('Registration validation interactions', () => {
     ).toHaveCount(0);
   });
 
-  test('registration tiers match Ghana tickets; reception appears for students only', async ({
+  test('registration tiers match Ghana tickets; student tickets appear for students only', async ({
     page,
   }) => {
+    await page.locator('button[data-section-nav="location"]').click();
+    await page.getByRole('radio', { name: 'All countries' }).click();
+    await page.locator('#registration-field-country').selectOption('US');
+
     const student = page.locator('#registration-field-is_student');
     await student.scrollIntoViewIfNeeded();
     await expect(student.getByRole('radio', { name: 'Yes' })).toBeVisible();
@@ -94,10 +97,14 @@ test.describe('Registration validation interactions', () => {
     ).toBeVisible();
     await expect(
       tiers.getByRole('radio', {
-        name: /Low- and Moderate-Income Nurses, Midwives and Allied Health/i,
+        name: /\$150 - Low- and Moderate-Income Nurses/i,
       }),
     ).toBeVisible();
-    await expect(tiers.getByRole('radio', { name: /Reception/i })).toHaveCount(0);
+    await expect(
+      tiers.getByRole('radio', { name: /Low- and Moderate-Income Physician/i }),
+    ).toBeVisible();
+    await expect(tiers.getByRole('radio', { name: /Reception/i })).toBeVisible();
+    await expect(tiers.getByRole('radio', { name: /Student/i })).toHaveCount(0);
 
     await student.getByRole('radio', { name: 'Yes' }).click();
     await expect(student.getByRole('radio', { name: 'Yes' })).toHaveAttribute(
@@ -115,7 +122,13 @@ test.describe('Registration validation interactions', () => {
     ).toBeVisible();
     await expect(
       tiers.getByRole('radio', {
-        name: /Low- and Moderate-Income Nurses, Midwives and Allied Health/i,
+        name: /\$150 - Low- and Moderate-Income Nurses/i,
+      }),
+    ).toBeVisible();
+    await expect(tiers.getByRole('radio', { name: /\$200 - Diaspora Student/i })).toBeVisible();
+    await expect(
+      tiers.getByRole('radio', {
+        name: /\$75 - Low- and Moderate-Income Nurses, Midwives and Allied Health Student/i,
       }),
     ).toBeVisible();
     await expect(tiers.getByRole('radio', { name: /Reception/i })).toBeVisible();

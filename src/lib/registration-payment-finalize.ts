@@ -1,3 +1,8 @@
+import {
+  paystackChargeMatches,
+  resolvePaystackCharge,
+  type PaystackVerifiedTransaction,
+} from '@/lib/paystack';
 import { centsFromUsd } from '@/lib/pricing';
 import type { OccupancyType, RegistrationTier, RoomTypeCode } from '@/lib/pricing';
 import { assertPricingMatches } from '@/lib/schemas/registration';
@@ -7,6 +12,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export type RegistrationPaymentRow = {
   id: string;
   email?: string;
+  country?: string | null;
   registration_type: RegistrationTier;
   needs_housing: boolean;
   room_type: RoomTypeCode | null;
@@ -22,7 +28,7 @@ export type RegistrationPaymentRow = {
 };
 
 export const REGISTRATION_PAYMENT_ROW_SELECT_PENDING =
-  'id,registration_type,needs_housing,room_type,occupancy_type,payment_status,total_amount,checkout_correlation_reference,registration_amount,housing_amount,email,conference_id,created_at,payment_sync_checked_at';
+  'id,registration_type,needs_housing,room_type,occupancy_type,payment_status,total_amount,checkout_correlation_reference,registration_amount,housing_amount,email,country,conference_id,created_at,payment_sync_checked_at';
 
 const UUID_RX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -231,4 +237,101 @@ export async function finalizeRegistrationPaymentForRow(
     outcome: 'db_error',
     message: `Payment finalization returned ${String(outcome ?? 'no outcome')}.`,
   };
+}
+
+function totalUsdForRow(row: RegistrationPaymentRow): number {
+  return typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
+}
+
+export async function finalizePaystackRegistrationPayment(
+  supabase: SupabaseClient,
+  row: RegistrationPaymentRow,
+  verified: PaystackVerifiedTransaction,
+): Promise<
+  | { outcome: 'paid'; registrationId: string }
+  | { outcome: 'already_paid'; registrationId: string }
+  | {
+      outcome: 'rejected';
+      reason: 'pricing_mismatch' | 'invalid_total' | 'amount_mismatch';
+    }
+  | { outcome: 'db_error'; message: string }
+> {
+  if (!assertPricingMatches(row)) {
+    await supabase.from('conference_registrations').update({ payment_status: 'failed' }).eq('id', row.id);
+    return { outcome: 'rejected', reason: 'pricing_mismatch' };
+  }
+
+  const totalUsd = totalUsdForRow(row);
+  if (!Number.isFinite(totalUsd)) {
+    await supabase.from('conference_registrations').update({ payment_status: 'failed' }).eq('id', row.id);
+    return { outcome: 'rejected', reason: 'invalid_total' };
+  }
+
+  let charge;
+  try {
+    charge = resolvePaystackCharge(totalUsd);
+  } catch {
+    return { outcome: 'rejected', reason: 'invalid_total' };
+  }
+
+  if (!paystackChargeMatches(charge, verified) || verified.status !== 'success') {
+    return { outcome: 'rejected', reason: 'amount_mismatch' };
+  }
+
+  if (row.payment_status === 'paid') {
+    return { outcome: 'already_paid', registrationId: row.id };
+  }
+
+  const { error: txnError } = await supabase.from('paystack_transactions').insert({
+    paystack_id: verified.id,
+    event: 'charge.success',
+    reference: verified.reference,
+    registration_id: row.id,
+    amount_cents: charge.amountUsdCents,
+    currency: verified.currency.toUpperCase(),
+    status: verified.status,
+    channel: verified.channel,
+    paid_at: verified.paidAt,
+    payload: verified.payload,
+  });
+  const duplicateTxn =
+    !!txnError && (txnError.code === '23505' || /duplicate key value/i.test(txnError.message ?? ''));
+  if (txnError && !duplicateTxn) {
+    return { outcome: 'db_error', message: txnError.message };
+  }
+
+  const { error: auditError } = await supabase.from('provider_payment_audit').insert({
+    provider: 'paystack',
+    external_payment_id: String(verified.id),
+    event_type: 'charge.success',
+    registration_id: row.id,
+    amount_cents: charge.amountUsdCents,
+    currency: verified.currency.toUpperCase(),
+    status: 'succeeded',
+    payload: verified.payload,
+  });
+  const duplicateAudit =
+    !!auditError && (auditError.code === '23505' || /duplicate key value/i.test(auditError.message ?? ''));
+  if (auditError && !duplicateAudit) {
+    return { outcome: 'db_error', message: auditError.message };
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from('conference_registrations')
+    .update({
+      payment_status: 'paid',
+      checkout_correlation_reference: String(verified.id),
+    })
+    .eq('id', row.id)
+    .eq('payment_status', 'pending')
+    .select('id')
+    .maybeSingle();
+
+  if (updateError) {
+    return { outcome: 'db_error', message: updateError.message };
+  }
+  if (!updated) {
+    return { outcome: 'already_paid', registrationId: row.id };
+  }
+  return { outcome: 'paid', registrationId: row.id };
 }

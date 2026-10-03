@@ -85,6 +85,7 @@ async function saveRegistration(values: RegistrationFormValues, conferenceSlug?:
       conference.slug,
       values.registration_type,
       values.is_student,
+      values.country,
     )
   ) {
     throw new InvalidRegistrationTierError();

@@ -91,17 +91,69 @@ describe('registrationFormSchema', () => {
     expect(persisted.payload.housing_amount).toBe(0);
   });
 
-  it('allows reception only for students', () => {
+  it('accepts the Africa catalog for Ghana and rejects diaspora tickets there', () => {
+    const africa = registrationFormSchema.safeParse(
+      validBase({
+        country: 'GH',
+        registration_type: 'african_nurses_midwives',
+      }),
+    );
+    expect(africa.success).toBe(true);
+    if (africa.success) {
+      expect(summarizeForPersistence(africa.data).payload.registration_amount).toBe(1500);
+    }
+
     expect(
       registrationFormSchema.safeParse(
-        validBase({ is_student: false, registration_type: 'reception' }),
+        validBase({
+          country: 'GH',
+          registration_type: 'diaspora_nurses_allied_health',
+        }),
       ).success,
     ).toBe(false);
     expect(
       registrationFormSchema.safeParse(
-        validBase({ is_student: true, registration_type: 'reception' }),
+        validBase({
+          country: 'US',
+          registration_type: 'reception_dinner',
+        }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it('allows student tickets only for students and reception for everyone', () => {
+    for (const registration_type of [
+      'diaspora_student',
+      'low_moderate_income_nurses_allied_health_student',
+    ] as const) {
+      expect(
+        registrationFormSchema.safeParse(validBase({ is_student: false, registration_type }))
+          .success,
+      ).toBe(false);
+      expect(
+        registrationFormSchema.safeParse(validBase({ is_student: true, registration_type }))
+          .success,
+      ).toBe(true);
+    }
+    expect(
+      registrationFormSchema.safeParse(
+        validBase({ is_student: false, registration_type: 'reception' }),
       ).success,
     ).toBe(true);
+  });
+
+  it('prices the Zeffy diaspora tickets', () => {
+    const cases = [
+      ['diaspora_student', true, 200],
+      ['low_moderate_income_nurses_allied_health_student', true, 75],
+      ['low_moderate_income_physician', false, 250],
+      ['reception', false, 100],
+    ] as const;
+    for (const [registration_type, is_student, amount] of cases) {
+      const { payload } = summarizeForPersistence(validBase({ registration_type, is_student }));
+      expect(payload.registration_amount).toBe(amount);
+      expect(payload.total_amount).toBe(amount);
+    }
   });
 
   it('accepts physician and low/moderate-income tiers at the new prices', () => {
@@ -187,10 +239,10 @@ describe('registrationFieldMessage / validators', () => {
     expect(registrationFieldMessage('heard_about_us', validBase())).toBeUndefined();
   });
 
-  it('surfaces reception student-only error', () => {
+  it('surfaces student-only ticket error', () => {
     const values = validBase({
       is_student: false,
-      registration_type: 'reception',
+      registration_type: 'diaspora_student',
     });
     expect(registrationFieldMessage('registration_type', values)).toMatch(
       /students only/i,

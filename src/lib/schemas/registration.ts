@@ -4,6 +4,7 @@ import { DEFAULT_CONFERENCE_SLUG, normalizeConferenceSlug } from '@/lib/conferen
 import {
   getConferenceRegistrationConfig,
   isRegistrationTierAllowedForConference,
+  isStudentOnlyRegistrationTier,
   type OccupancyType as HousingOccupancy,
   type RegistrationTier,
   type RoomTypeCode,
@@ -69,11 +70,16 @@ export const registrationTierSchema = z.enum([
   'virtual',
   'diaspora_nurses_allied_health',
   'diaspora_physicians',
+  'diaspora_student',
   'low_moderate_income_nurses_allied_health',
+  'low_moderate_income_nurses_allied_health_student',
+  'low_moderate_income_physician',
   'reception',
+  'african_students',
+  'reception_dinner',
+  'african_physicians_allied',
+  'african_nurses_midwives',
 ]);
-
-const registrationTierLiterals = registrationTierSchema.Enum;
 
 /** Client + server validation */
 export const registrationFormSchema = z
@@ -138,13 +144,20 @@ export const registrationFormSchema = z
       }
     }
 
-    if (!isRegistrationTierAllowedForConference(slug, data.registration_type, data.is_student)) {
+    if (
+      !isRegistrationTierAllowedForConference(
+        slug,
+        data.registration_type,
+        data.is_student,
+        data.country,
+      )
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: data.is_student
           ? 'Select a registration option available to students for this conference.'
-          : data.registration_type === registrationTierLiterals.reception
-            ? 'Reception registration is available to students only.'
+          : isStudentOnlyRegistrationTier(slug, data.registration_type)
+            ? 'This ticket is available to students only.'
             : 'Select a registration option available for this conference.',
         path: ['registration_type'],
       });
@@ -179,10 +192,15 @@ export function registrationCrossFieldMessage(
 
   if (
     (key === 'registration_type' || key === 'is_student') &&
-    !isRegistrationTierAllowedForConference(slug, data.registration_type, data.is_student)
+    !isRegistrationTierAllowedForConference(
+      slug,
+      data.registration_type,
+      data.is_student,
+      data.country,
+    )
   ) {
-    if (data.registration_type === registrationTierLiterals.reception && !data.is_student) {
-      return 'Reception registration is available to students only.';
+    if (!data.is_student && isStudentOnlyRegistrationTier(slug, data.registration_type)) {
+      return 'This ticket is available to students only.';
     }
     return data.is_student
       ? 'Select a registration option available to students for this conference.'

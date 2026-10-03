@@ -5,7 +5,6 @@ const SECTION_IDS = [
   'professional',
   'location',
   'preferences',
-  'housing',
   'heard',
   'social',
   'payment',
@@ -41,7 +40,7 @@ test.describe('Conference registration page', () => {
         .getByRole('list', { name: 'Conference details' })
         .getByText(/Kofi Ohene-Konadu Auditorium, UPSA, Accra, Ghana/),
     ).toBeVisible();
-    await expect(page.getByText(/Secure checkout with Zeffy/)).toBeVisible();
+    await expect(page.getByText(/Secure checkout with Zeffy or Paystack/)).toBeVisible();
     await expect(page.getByRole('img', { name: /A-DNA community members gathered for the conference/i })).toBeVisible();
   });
 
@@ -107,7 +106,7 @@ test.describe('Conference registration page', () => {
     await expect(page.getByRole('heading', { name: 'Professional Background' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Location' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Conference Preferences' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Housing' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Housing' })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'How Did You Hear About Us' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Social Media' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible();
