@@ -66,7 +66,7 @@ curl -X POST https://campaign.g-dna.org/api/cron/zeffy-payment-sync \
 
 **Checkout routing:** If the registrant’s country is Ghana or another African country, the form offers African Students (GHS 750), Reception Dinner (GHS 1,000), African Physicians and Allied (GHS 2,000), and African Nurses and Midwives (GHS 1,500). `/api/payment/initialize` opens a Paystack checkout for the ticket’s cedi price through the Paystack API, tagged with the registration ID so the webhook and `/api/payment/verify` can confirm it. Other attendees keep the diaspora ticket list and continue to Zeffy. Point Paystack’s webhook at `/api/webhooks/paystack`. Location comes from Vercel/Cloudflare country headers in production; locally we look up this machine’s public IP (VPN-aware) and fall back to timezone.
 
-**Zeffy checkout:** Set `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` to the campaign page (for Ghana 2027: [The Future of African Healthcare](https://www.zeffy.com/en-US/ticketing/the-future-of-african-healthcare-diaspora-partnerships-for-sustainable-impact)). Attendees outside Africa see diaspora tickets (Nurses/Midwives/Allied $250, Physicians $350, LMIC $150, Reception $150 for students) and pay on Zeffy unless you add optional per-tier `ZEFFY_CHECKOUT_URL_*` deep links.
+**Zeffy checkout:** Set `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` to the campaign page (for Ghana 2027: [The Future of African Healthcare](https://www.zeffy.com/en-US/ticketing/the-future-of-african-healthcare-diaspora-partnerships-for-sustainable-impact)). Attendees outside Africa see diaspora tickets (Nurses/Midwives/Allied $250, Physicians $350, LMIC $150, Reception $100 for everyone) and pay on Zeffy unless you add optional per-tier `ZEFFY_CHECKOUT_URL_*` deep links.
 
 ### Database
 
