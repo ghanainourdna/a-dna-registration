@@ -63,10 +63,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   const metadataRegistrationId =
     typeof metadata.registration_id === 'string' ? metadata.registration_id.trim() : '';
 
-  const row =
-    (metadataRegistrationId
-      ? await fetchRegistrationPaymentRowForFinalize(supabase, metadataRegistrationId)
-      : null) ?? (await findRegistrationByCorrelationToken(supabase, verified.reference));
+  let row;
+  try {
+    row =
+      (metadataRegistrationId
+        ? await fetchRegistrationPaymentRowForFinalize(supabase, metadataRegistrationId)
+        : null) ?? (await findRegistrationByCorrelationToken(supabase, verified.reference));
+  } catch (error) {
+    console.error(
+      '[paystack webhook] registration lookup failed',
+      error instanceof Error ? error.message : error,
+    );
+    return jsonError('registration_lookup_failed', 500);
+  }
 
   if (!row) {
     console.warn('[paystack webhook] registration not found', verified.reference);
