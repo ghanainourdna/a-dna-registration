@@ -1,5 +1,6 @@
 import { sendPaidRegistrationConfirmationIfNeeded } from '@/lib/email/send-registration-confirmation';
 import { resolveConferenceZeffyCampaignId } from '@/lib/conferences';
+import { shouldUsePaystackCheckout } from '@/lib/paystack';
 import {
   finalizeRegistrationPaymentForRow,
   REGISTRATION_PAYMENT_ROW_SELECT_PENDING,
@@ -188,7 +189,9 @@ export async function listPendingRegistrationsForPaymentSync(
     throw new Error(error.message);
   }
 
-  return (data ?? []) as RegistrationPaymentRow[];
+  return ((data ?? []) as RegistrationPaymentRow[]).filter(
+    (row) => !shouldUsePaystackCheckout(row.country),
+  );
 }
 
 async function markRegistrationsCheckedForPaymentSync(
