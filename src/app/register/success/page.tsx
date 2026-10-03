@@ -66,7 +66,7 @@ function SuccessContent() {
           setState({
             status: 'error',
             message:
-              'Missing registration confirmation. Complete payment on Zeffy, then return using the link shown after checkout.',
+              'Missing registration confirmation. Complete payment, then return using the link shown after checkout.',
           });
         }
       });
@@ -167,7 +167,7 @@ function SuccessContent() {
   const body =
     state.status === 'loading' || state.status === 'pending' ? (
       <div className="space-y-2 text-sm text-stone-600">
-        <p>Confirming payment with Zeffy and your registration record…</p>
+        <p>Confirming payment with the checkout provider and your registration record…</p>
         {state.status === 'pending' ? (
           <p className="text-xs text-stone-500">
             Payments can take a moment to sync. Automatic retries remaining:{' '}
@@ -194,7 +194,7 @@ function SuccessContent() {
           We could not confirm a completed payment for this registration
           {state.paymentStatus ? ` (status: ${state.paymentStatus}).` : '.'}
           {state.reason ? ` (${state.reason}).` : null}{' '}
-          If Zeffy emailed a receipt, forward it to info@g-dna.org and we will match it manually.
+          If Paystack or Zeffy emailed a receipt, forward it to info@g-dna.org and we will match it manually.
         </p>
       </div>
     ) : (

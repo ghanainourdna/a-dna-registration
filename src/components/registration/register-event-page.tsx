@@ -58,9 +58,13 @@ function LocationIcon() {
 export function RegisterEventPage({
   conference,
   countries,
+  detectedCountry = null,
+  autoDetectLocation = true,
 }: {
   conference: Conference;
   countries: CountryOption[];
+  detectedCountry?: string | null;
+  autoDetectLocation?: boolean;
 }) {
   return (
     <main className="min-w-0 bg-[#f6f7f9] pb-24">
@@ -76,7 +80,7 @@ export function RegisterEventPage({
             fill
             priority
             sizes="(max-width: 768px) 100vw, 100vw"
-            className="object-cover max-md:object-[center_40%_20%] md:object-[center_center] md:scale-[0.93]"
+            className="object-cover max-md:object-[center_40%] md:object-center md:scale-[0.93]"
           />
           <div
             className="absolute inset-0 bg-linear-to-b from-black/75 via-black/52 to-emerald-950/50 md:bg-linear-to-r md:from-black/82 md:via-black/48 md:to-emerald-900/42"
@@ -185,10 +189,11 @@ export function RegisterEventPage({
                   </div>
                   <div className="min-w-0 pt-0.5">
                     <p className="text-[15px] font-semibold leading-snug tracking-tight text-white sm:text-base">
-                      Secure checkout with Zeffy
+                      Secure checkout with Zeffy or Paystack
                     </p>
                     <p className="mt-2 text-[13px] leading-relaxed text-stone-200/95 sm:text-sm">
-                      No platform fees. Optional tips support Zeffy. Your
+                      Registrants in Ghana and across Africa pay with Paystack
+                      (cards and mobile money). Other attendees use Zeffy. Your
                       payment advances A-DNA mentorship, scholarships, advocacy,
                       and clinician leadership programming.
                     </p>
@@ -314,6 +319,8 @@ export function RegisterEventPage({
         conferenceTitle={conference.title}
         worldCountry={conference.world_country}
         housingEnabled={conference.housing_enabled}
+        detectedCountry={detectedCountry}
+        autoDetectLocation={autoDetectLocation}
       />
 
       <footer className="mx-auto w-full max-w-[min(115rem,calc(100%-2rem))] min-w-0 px-4 pb-10 pt-8 text-center text-sm leading-relaxed text-stone-500 md:px-10">

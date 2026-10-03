@@ -1,3 +1,5 @@
+import { isAfricanCountryCode } from '@/lib/countries/africa';
+
 export const HOUSING_NIGHTS = 3;
 export const HOUSING_DATES_LABEL = 'August 20–22, 2026';
 
@@ -17,11 +19,51 @@ export const REGISTRATION_PRICES_USD = {
   // Ghana 2027
   diaspora_nurses_allied_health: 250,
   diaspora_physicians: 350,
+  diaspora_student: 200,
   low_moderate_income_nurses_allied_health: 150,
-  reception: 150,
+  low_moderate_income_nurses_allied_health_student: 75,
+  low_moderate_income_physician: 250,
+  reception: 100,
+  /** Ghana / Africa Paystack shops, charged in cedis (not USD). */
+  african_students: 750,
+  reception_dinner: 1000,
+  african_physicians_allied: 2000,
+  african_nurses_midwives: 1500,
 } as const;
 
 export type RegistrationTier = keyof typeof REGISTRATION_PRICES_USD;
+
+export type RegistrationPriceCurrency = 'USD' | 'GHS';
+
+/** Ticket types shown when the registrant is in Ghana or another African country. */
+export const AFRICA_REGISTRATION_TIERS = [
+  'african_students',
+  'reception_dinner',
+  'african_physicians_allied',
+  'african_nurses_midwives',
+] as const satisfies readonly RegistrationTier[];
+
+const AFRICA_REGISTRATION_TIER_SET = new Set<RegistrationTier>(AFRICA_REGISTRATION_TIERS);
+
+export function registrationPriceCurrency(tier: RegistrationTier): RegistrationPriceCurrency {
+  return AFRICA_REGISTRATION_TIER_SET.has(tier) ? 'GHS' : 'USD';
+}
+
+export function formatRegistrationAmount(
+  amount: number,
+  tier: RegistrationTier,
+  options?: { withCode?: boolean },
+): string {
+  if (registrationPriceCurrency(tier) === 'GHS') {
+    const formatted = amount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    return `GHS ${formatted}`;
+  }
+  const usd = `$${amount.toFixed(2)}`;
+  return options?.withCode ? `${usd} USD` : usd;
+}
 
 export type ConferenceRegistrationConfig = {
   housingEnabled: boolean;
@@ -35,16 +77,21 @@ export const CONFERENCE_REGISTRATION_CONFIG: Record<string, ConferenceRegistrati
   'ghana-2027': {
     housingEnabled: false,
     defaultTier: 'diaspora_nurses_allied_health',
-    studentDefaultTier: 'diaspora_nurses_allied_health',
+    studentDefaultTier: 'diaspora_student',
     tiersWhenNotStudent: [
       'diaspora_nurses_allied_health',
       'diaspora_physicians',
       'low_moderate_income_nurses_allied_health',
+      'low_moderate_income_physician',
+      'reception',
     ],
     tiersWhenStudent: [
       'diaspora_nurses_allied_health',
       'diaspora_physicians',
+      'diaspora_student',
       'low_moderate_income_nurses_allied_health',
+      'low_moderate_income_nurses_allied_health_student',
+      'low_moderate_income_physician',
       'reception',
     ],
   },
@@ -92,12 +139,33 @@ export function registrationTiersForConference(
   return [...(isStudent ? config.tiersWhenStudent : config.tiersWhenNotStudent)];
 }
 
+export function usesAfricaRegistrationCatalog(
+  conferenceSlug: string | null | undefined,
+  country: string | null | undefined,
+): boolean {
+  const slug = conferenceSlug?.trim().toLowerCase() || 'ghana-2027';
+  return slug === 'ghana-2027' && isAfricanCountryCode(country);
+}
+
+/** Tickets for this attendee. Ghana/Africa uses the Paystack catalog; everyone else uses the conference list. */
+export function registrationTiersForAttendee(
+  conferenceSlug: string | null | undefined,
+  isStudent: boolean,
+  country?: string | null,
+): RegistrationTier[] {
+  if (usesAfricaRegistrationCatalog(conferenceSlug, country)) {
+    return [...AFRICA_REGISTRATION_TIERS];
+  }
+  return registrationTiersForConference(conferenceSlug, isStudent);
+}
+
 export function isRegistrationTierAllowedForConference(
   conferenceSlug: string | null | undefined,
   tier: RegistrationTier,
   isStudent: boolean,
+  country?: string | null,
 ): boolean {
-  return registrationTiersForConference(conferenceSlug, isStudent).includes(tier);
+  return registrationTiersForAttendee(conferenceSlug, isStudent, country).includes(tier);
 }
 
 /** Tiers shown only after the registrant marks themselves as a student. */
@@ -124,6 +192,17 @@ export function defaultRegistrationTierForConference(
 ): RegistrationTier {
   const config = getConferenceRegistrationConfig(conferenceSlug);
   return isStudent ? config.studentDefaultTier : config.defaultTier;
+}
+
+export function defaultRegistrationTierForAttendee(
+  conferenceSlug: string,
+  isStudent: boolean,
+  country?: string | null,
+): RegistrationTier {
+  if (usesAfricaRegistrationCatalog(conferenceSlug, country)) {
+    return isStudent ? 'african_students' : 'african_nurses_midwives';
+  }
+  return defaultRegistrationTierForConference(conferenceSlug, isStudent);
 }
 
 export const ROOM_BLOCK = {

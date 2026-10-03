@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { RegisterEventPage } from "@/components/registration/register-event-page";
@@ -8,6 +9,7 @@ import {
   fetchConferenceBySlug,
 } from "@/lib/conferences";
 import { fetchCountriesCatalog } from "@/lib/countries/catalog";
+import { detectVisitorCountry } from "@/lib/visitor-location";
 
 export const metadata: Metadata = {
   title: `Conference Registration · ${DEFAULT_GHANA_2027_CONFERENCE.title}`,
@@ -24,14 +26,22 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RegisterPage() {
-  const [countries, conference] = await Promise.all([
+  const [countries, conference, headerStore] = await Promise.all([
     fetchCountriesCatalog(),
     fetchConferenceBySlug(DEFAULT_CONFERENCE_SLUG),
+    headers(),
   ]);
 
   if (!conference) {
     notFound();
   }
 
-  return <RegisterEventPage conference={conference} countries={countries} />;
+  return (
+    <RegisterEventPage
+      conference={conference}
+      countries={countries}
+      detectedCountry={await detectVisitorCountry(headerStore)}
+      autoDetectLocation={process.env.E2E_FIXTURE_COUNTRIES !== "1"}
+    />
+  );
 }

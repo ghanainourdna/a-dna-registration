@@ -1,13 +1,20 @@
 "use client";
 
-import { useForm } from "@tanstack/react-form";
+import { useForm, useStore } from "@tanstack/react-form";
 import {
   AnimatePresence,
   LayoutGroup,
   motion,
   useReducedMotion,
 } from "framer-motion";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
@@ -16,9 +23,12 @@ import type { CountryOption } from "@/lib/countries/catalog";
 import {
   DEFAULT_REGISTRATION_TIER,
   HOUSING_RATES_USD,
-  defaultRegistrationTierForConference,
-  registrationTiersForConference,
+  defaultRegistrationTierForAttendee,
+  formatRegistrationAmount,
+  registrationTiersForAttendee,
+  usesAfricaRegistrationCatalog,
   totalAmountUsd,
+  type RegistrationTier,
   type RoomTypeCode,
 } from "@/lib/pricing";
 import { REGISTRATION_TIER_LABELS } from "@/lib/registration-labels";
@@ -32,6 +42,22 @@ import {
   type RegistrationFormValues,
 } from "@/lib/schemas/registration";
 import { UI_MS_SHORT, useUiMotion } from "@/lib/ui-motion";
+import {
+  countryListScopeForVisitor,
+  guessCountryFromTimeZone,
+} from "@/lib/visitor-location";
+
+function subscribeBrowserTimeZone() {
+  return () => {};
+}
+
+function readBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
 
 const defaultValues: RegistrationFormValues = {
   first_name: "",
@@ -201,11 +227,13 @@ function CountryPickerField({
   countries,
   disabled,
   defaultScope,
+  detectedCountry,
   field,
 }: {
   countries: CountryOption[];
   disabled: boolean;
   defaultScope: "africa" | "all";
+  detectedCountry?: string | null;
   field: {
     state: {
       value: string | undefined | null;
@@ -220,7 +248,10 @@ function CountryPickerField({
   const searchId = `${controlId}-search`;
   const scopeGroupId = `${controlId}-scope`;
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<"africa" | "all">(defaultScope);
+  const [scopeOverride, setScopeOverride] = useState<"africa" | "all" | null>(
+    null,
+  );
+  const scope = scopeOverride ?? defaultScope;
 
   const filteredCountries = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -282,7 +313,7 @@ function CountryPickerField({
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  onClick={() => setScope(value)}
+                  onClick={() => setScopeOverride(value)}
                   className={cn(
                     "rounded-lg px-2.5 py-1.5 text-center text-xs font-semibold transition",
                     selected
@@ -323,9 +354,10 @@ function CountryPickerField({
         hasError={!!errMsg}
         value={field.state.value ?? ""}
         onBlur={field.handleBlur}
-        onChange={(e) =>
-          field.handleChange(String(e.target.value).trim().toUpperCase())
-        }
+        onChange={(e) => {
+          const code = String(e.target.value).trim().toUpperCase();
+          field.handleChange(code);
+        }}
         disabled={disabled}
         autoComplete="country"
         aria-invalid={errMsg ? true : undefined}
@@ -344,7 +376,45 @@ function CountryPickerField({
         meta={field.state.meta}
         id={registrationFeedbackId("country")}
       />
+      {detectedCountry &&
+      String(field.state.value ?? "").trim().toUpperCase() ===
+        detectedCountry ? (
+        <p className="mt-2 text-xs leading-relaxed text-stone-500">
+          {defaultScope === "africa"
+            ? "We detected you in Ghana or elsewhere in Africa, so African tickets and Paystack checkout are selected. Change the country if this is wrong."
+            : "We detected you outside Africa, so the full country list and Zeffy checkout are selected. Change the country if this is wrong."}
+        </p>
+      ) : null}
     </>
+  );
+}
+
+function DevCheckoutModeSignal({ country }: { country: string }) {
+  if (process.env.NODE_ENV !== "development") return null;
+
+  const selected = country.trim().toUpperCase();
+  const africa = isAfricanCountryCode(selected);
+  const mode = !selected ? "unset" : africa ? "africa" : "other";
+  const label =
+    mode === "unset"
+      ? "No country · checkout unset"
+      : mode === "africa"
+        ? "Ghana / Africa mode · Paystack"
+        : "Non-Africa mode · Zeffy";
+
+  return (
+    <p
+      data-dev-checkout-mode={mode}
+      className={cn(
+        "pointer-events-none fixed bottom-4 left-4 z-50 max-w-[min(22rem,calc(100vw-2rem))] rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] shadow-lg",
+        mode === "africa" &&
+          "border-emerald-700/40 bg-emerald-800 text-emerald-50",
+        mode === "other" && "border-stone-400/50 bg-stone-900 text-amber-100",
+        mode === "unset" && "border-stone-300 bg-white/95 text-stone-600",
+      )}
+    >
+      Dev · {label}
+    </p>
   );
 }
 
@@ -531,21 +601,60 @@ function SummaryUsd({
   );
 }
 
+function SummaryRegistrationAmount({
+  amount,
+  tier,
+  className,
+  withCode = false,
+}: {
+  amount: number;
+  tier: RegistrationTier;
+  className?: string;
+  withCode?: boolean;
+}) {
+  const reduced = useReducedMotion() ?? false;
+  const label = formatRegistrationAmount(amount, tier, { withCode });
+  return (
+    <motion.span
+      key={label}
+      layout="position"
+      initial={reduced ? undefined : { opacity: 0.5 }}
+      animate={{ opacity: 1 }}
+      transition={{
+        duration: reduced ? 0 : UI_MS_SHORT / 1000,
+        ease: "easeOut",
+      }}
+      className={cn(className)}
+    >
+      {label}
+    </motion.span>
+  );
+}
+
 export function RegistrationForm({
   countries,
   conferenceSlug = "ghana-2027",
   conferenceTitle = "A-DNA Ghana Conference 2027",
   worldCountry = "africa",
   housingEnabled = false,
+  detectedCountry = null,
+  autoDetectLocation = true,
 }: {
   countries: CountryOption[];
   conferenceSlug?: string;
   conferenceTitle?: string;
   worldCountry?: "africa" | "all";
   housingEnabled?: boolean;
+  detectedCountry?: string | null;
+  autoDetectLocation?: boolean;
 }) {
   const motionUi = useUiMotion();
   const countryListReady = countries.length > 0;
+  const sections = useMemo(
+    () =>
+      housingEnabled ? SECTIONS : SECTIONS.filter((s) => s.id !== "housing"),
+    [housingEnabled],
+  );
   const [activeSection, setActiveSection] = useState(SECTIONS[0]!.id);
   const [status, setStatus] = useState<"idle" | "saving" | "pay">("idle");
   const [formMessage, setFormMessage] = useState<{
@@ -561,16 +670,12 @@ export function RegistrationForm({
   const suppressSectionObserverRef = useRef(false);
   const sectionObserverResumeTimerRef = useRef<number | null>(null);
 
-  const activeIndex = SECTIONS.findIndex((s) => s.id === activeSection);
+  const activeIndex = sections.findIndex((s) => s.id === activeSection);
   const resolvedIndex = activeIndex >= 0 ? activeIndex : 0;
   const progressPercent =
-    SECTIONS.length > 0
-      ? Math.min(100, ((resolvedIndex + 1) / SECTIONS.length) * 100)
+    sections.length > 0
+      ? Math.min(100, ((resolvedIndex + 1) / sections.length) * 100)
       : 0;
-
-  useEffect(() => {
-    progressNavRef.current?.setAttribute("data-nav-ready", "true");
-  }, []);
 
   const jumpToSection = (sectionId: string) => {
     const el = document.getElementById(`section-${sectionId}`);
@@ -622,7 +727,7 @@ export function RegistrationForm({
       io?.disconnect();
       io = null;
 
-      const elements = SECTIONS.map((s) =>
+      const elements = sections.map((s) =>
         document.getElementById(`section-${s.id}`),
       ).filter((el): el is HTMLElement => el !== null);
       if (elements.length === 0) return;
@@ -640,7 +745,7 @@ export function RegistrationForm({
             a.intersectionRatio >= b.intersectionRatio ? a : b,
           );
           const id = best.target.id.replace(/^section-/, "");
-          if (SECTIONS.some((s) => s.id === id)) setActiveSection(id);
+          if (sections.some((s) => s.id === id)) setActiveSection(id);
         },
         {
           root: null,
@@ -660,19 +765,45 @@ export function RegistrationForm({
         window.clearTimeout(sectionObserverResumeTimerRef.current);
       }
     };
-  }, []);
+  }, [sections]);
+
+  const clientTimeZone = useSyncExternalStore(
+    subscribeBrowserTimeZone,
+    readBrowserTimeZone,
+    () => null,
+  );
+  const clientGuessedCountry = useMemo(() => {
+    if (!autoDetectLocation) return null;
+    const guess = guessCountryFromTimeZone(clientTimeZone);
+    if (!guess || !countries.some((country) => country.code === guess)) {
+      return null;
+    }
+    return guess;
+  }, [autoDetectLocation, clientTimeZone, countries]);
+  const catalogHasDetectedCountry = Boolean(
+    detectedCountry && countries.some((c) => c.code === detectedCountry),
+  );
+  const visitorCountry = catalogHasDetectedCountry ? detectedCountry : null;
+  const effectiveDetectedCountry = visitorCountry ?? clientGuessedCountry;
+  const countryListScope = countryListScopeForVisitor({
+    detectedCountry: effectiveDetectedCountry,
+    conferenceWorldCountry: worldCountry,
+  });
 
   const initialValues = useMemo<RegistrationFormValues>(
     () => ({
       ...defaultValues,
-      registration_type: defaultRegistrationTierForConference(
+      country:
+        visitorCountry ?? clientGuessedCountry ?? defaultValues.country,
+      registration_type: defaultRegistrationTierForAttendee(
         conferenceSlug,
         false,
+        visitorCountry ?? clientGuessedCountry,
       ),
       conference_slug: conferenceSlug,
       conference_housing_enabled: housingEnabled,
     }),
-    [conferenceSlug, housingEnabled],
+    [clientGuessedCountry, conferenceSlug, housingEnabled, visitorCountry],
   );
 
   const form = useForm({
@@ -772,15 +903,63 @@ export function RegistrationForm({
   });
 
   const submitting = status !== "idle";
+  const registrationCountry = useStore(
+    form.store,
+    (state) => state.values.country,
+  );
+  const registrationIsStudent = useStore(
+    form.store,
+    (state) => state.values.is_student,
+  );
+  const africaRegistrationCatalog = usesAfricaRegistrationCatalog(
+    conferenceSlug,
+    registrationCountry,
+  );
+
+  useEffect(() => {
+    if (!clientGuessedCountry || visitorCountry) return;
+    if (form.getFieldValue("country")) return;
+    form.setFieldValue("country", clientGuessedCountry);
+  }, [clientGuessedCountry, visitorCountry, form]);
+
+  useEffect(() => {
+    const tier = form.getFieldValue("registration_type");
+    const allowed = registrationTiersForAttendee(
+      conferenceSlug,
+      registrationIsStudent,
+      registrationCountry,
+    );
+    if (!allowed.includes(tier)) {
+      form.setFieldValue(
+        "registration_type",
+        defaultRegistrationTierForAttendee(
+          conferenceSlug,
+          registrationIsStudent,
+          registrationCountry,
+        ),
+      );
+    }
+  }, [
+    conferenceSlug,
+    form,
+    registrationCountry,
+    registrationIsStudent,
+  ]);
 
   return (
-    <div className="relative mx-auto grid w-full min-w-0 max-w-[min(115rem,calc(100%-2rem))] gap-8 px-4 pb-24 pt-6 sm:px-6 md:px-10 lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
+    <div
+      data-detected-country={effectiveDetectedCountry ?? ""}
+      className="relative mx-auto grid w-full min-w-0 max-w-[min(115rem,calc(100%-2rem))] gap-8 px-4 pb-24 pt-6 sm:px-6 md:px-10 lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]"
+    >
+      <form.Subscribe selector={(s) => s.values.country}>
+        {(country) => <DevCheckoutModeSignal country={country} />}
+      </form.Subscribe>
       <div className="min-w-0 space-y-8 md:space-y-10">
         <nav
           ref={progressNavRef}
           className="sticky top-0 z-40 -mx-4 border-b border-stone-200/80 bg-[#f6f7f9]/98 px-4 pb-4 pt-3 shadow-[0_6px_12px_-8px_rgba(15,23,42,0.12)] backdrop-blur-md supports-[backdrop-filter]:bg-[#f6f7f9]/90 sm:-mx-6 sm:px-6 md:-mx-10 md:px-10"
           aria-label="Registration progress and section navigation"
-          data-nav-ready="false"
+          data-nav-ready="true"
         >
           <div className="mb-3">
             <div className="min-w-0 flex-1">
@@ -797,7 +976,7 @@ export function RegistrationForm({
                     transition={motionUi.fade}
                   >
                     <p className="mt-0.5 font-sans text-sm font-semibold leading-snug tracking-tight text-stone-900">
-                      {SECTIONS[resolvedIndex]?.title ?? "Sections"}
+                      {sections[resolvedIndex]?.title ?? "Sections"}
                     </p>
                   </motion.div>
                 </AnimatePresence>
@@ -810,7 +989,7 @@ export function RegistrationForm({
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuetext={
-              SECTIONS[resolvedIndex]?.title ?? "Registration progress"
+              sections[resolvedIndex]?.title ?? "Registration progress"
             }
             className="relative h-2 w-full overflow-hidden rounded-full bg-stone-200/90 shadow-inner ring-1 ring-black/[0.04]"
           >
@@ -825,7 +1004,7 @@ export function RegistrationForm({
             ref={sectionNavScrollRef}
             className="-mx-1 mt-3 flex min-w-0 gap-1.5 overflow-x-auto overscroll-x-contain px-1 pb-0.5 [scrollbar-width:thin] scroll-smooth touch-pan-x"
           >
-            {SECTIONS.map((s, i) => {
+            {sections.map((s, i) => {
               const past = i < resolvedIndex;
               const current = i === resolvedIndex;
               return (
@@ -877,6 +1056,8 @@ export function RegistrationForm({
 
         <form
           id="conference-registration-form"
+          data-registration-country={registrationCountry || ""}
+          data-registration-catalog={africaRegistrationCatalog ? "africa" : "other"}
           onSubmit={(e) => {
             e.preventDefault();
             void form.handleSubmit();
@@ -1100,24 +1281,7 @@ export function RegistrationForm({
                               key={String(val)}
                               checked={field.state.value === val}
                               className="text-stone-800"
-                              onSelect={() => {
-                                field.handleChange(val);
-                                const tier =
-                                  form.getFieldValue("registration_type");
-                                const allowed = registrationTiersForConference(
-                                  conferenceSlug,
-                                  val,
-                                );
-                                if (!allowed.includes(tier)) {
-                                  form.setFieldValue(
-                                    "registration_type",
-                                    defaultRegistrationTierForConference(
-                                      conferenceSlug,
-                                      val,
-                                    ),
-                                  );
-                                }
-                              }}
+                              onSelect={() => field.handleChange(val)}
                             >
                               {label}
                             </OptionToggle>
@@ -1164,7 +1328,8 @@ export function RegistrationForm({
                     <CountryPickerField
                       countries={countries}
                       disabled={!countryListReady}
-                      defaultScope={worldCountry}
+                      defaultScope={countryListScope}
+                      detectedCountry={effectiveDetectedCountry}
                       field={{
                         state: field.state,
                         handleBlur: field.handleBlur,
@@ -1368,16 +1533,12 @@ export function RegistrationForm({
             </div>
           </Section>
 
-          <Section
-            id="housing"
-            title="Housing"
-            subtitle={
-              housingEnabled
-                ? "Optional room block for conference attendees."
-                : "Not available for this conference."
-            }
-          >
-            {housingEnabled ? (
+          {housingEnabled ? (
+            <Section
+              id="housing"
+              title="Housing"
+              subtitle="Optional room block for conference attendees."
+            >
               <div className="space-y-5">
                 <div className="grid gap-3 sm:grid-cols-3">
                   {(Object.keys(HOUSING_RATES_USD) as RoomTypeCode[]).map(
@@ -1525,16 +1686,8 @@ export function RegistrationForm({
                   }
                 </form.Subscribe>
               </div>
-            ) : (
-              <div
-                className="rounded-2xl border border-stone-200/90 bg-stone-50/80 px-5 py-4 text-sm leading-relaxed text-stone-600"
-                role="status"
-              >
-                Housing is disabled. A hotel room block is not offered with this
-                registration. You can continue without selecting a room.
-              </div>
-            )}
-          </Section>
+            </Section>
+          ) : null}
 
           <Section
             id="heard"
@@ -1681,82 +1834,85 @@ export function RegistrationForm({
           <Section
             id="payment"
             title="Payment"
-            subtitle="Choose one registration type per attendee. You cannot combine multiple ticket types in a single registration. Reception is available when you select student status."
+            subtitle={
+              africaRegistrationCatalog
+                ? "Choose one ticket. Ghana and other African countries pay these prices in cedis via Paystack."
+                : "Choose one registration type per attendee. You cannot combine multiple ticket types in a single registration. Reception is available when you select student status."
+            }
           >
             <div className="space-y-3">
               <Label required className="mb-2 block">
                 Registration type
               </Label>
-              <form.Subscribe selector={(s) => s.values.is_student}>
-                {(isStudent) => (
-                  <form.Field
-                    name="registration_type"
-                    validators={registrationBlurFor("registration_type", [
-                      "is_student",
-                    ])}
-                  >
-                    {(field) => {
-                      const errMsg = summarizeFieldErrors(
-                        field.state.meta.errors,
-                      );
-                      const tierOptions = registrationTiersForConference(
-                        conferenceSlug,
-                        isStudent,
-                      );
-                      return (
-                        <>
-                          <div
-                            id={registrationControlId("registration_type")}
-                            role="radiogroup"
-                            aria-required="true"
-                            aria-invalid={errMsg ? true : undefined}
-                            aria-describedby={
-                              errMsg
-                                ? registrationFeedbackId("registration_type")
-                                : undefined
-                            }
-                            className={cn(
-                              "grid gap-2",
-                              errMsg && "rounded-xl outline outline-red-400/70",
-                            )}
-                          >
-                            {tierOptions.map((key) => {
-                              const meta = REGISTRATION_TIER_LABELS[key];
-                              return (
-                                <OptionToggle
-                                  key={key}
-                                  checked={field.state.value === key}
-                                  indicator="none"
-                                  className={cn(
-                                    "items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-300",
-                                    field.state.value === key
-                                      ? "border-emerald-600 ring-1 ring-emerald-500"
-                                      : "border-stone-200",
-                                  )}
-                                  onSelect={() => field.handleChange(key)}
-                                >
-                                  <span className="block font-semibold text-stone-900">
-                                    {meta.label}
-                                  </span>
-                                  {meta.note ? (
-                                    <span className="mt-1 block text-xs font-normal text-stone-500">
-                                      {meta.note}
-                                    </span>
-                                  ) : null}
-                                </OptionToggle>
-                              );
-                            })}
-                          </div>
-                          <FieldFeedback
-                            meta={field.state.meta}
-                            id={registrationFeedbackId("registration_type")}
-                          />
-                        </>
-                      );
-                    }}
-                  </form.Field>
-                )}
-              </form.Subscribe>
+              <form.Field
+                name="registration_type"
+                validators={registrationBlurFor("registration_type", [
+                  "is_student",
+                  "country",
+                ])}
+              >
+                {(field) => {
+                  const errMsg = summarizeFieldErrors(field.state.meta.errors);
+                  const tierOptions = registrationTiersForAttendee(
+                    conferenceSlug,
+                    registrationIsStudent,
+                    registrationCountry,
+                  );
+                  return (
+                    <>
+                      <div
+                        id={registrationControlId("registration_type")}
+                        data-registration-catalog={
+                          africaRegistrationCatalog ? "africa" : "other"
+                        }
+                        role="radiogroup"
+                        aria-required="true"
+                        aria-invalid={errMsg ? true : undefined}
+                        aria-describedby={
+                          errMsg
+                            ? registrationFeedbackId("registration_type")
+                            : undefined
+                        }
+                        className={cn(
+                          "grid gap-2",
+                          errMsg && "rounded-xl outline outline-red-400/70",
+                        )}
+                      >
+                        {tierOptions.map((key) => {
+                          const meta = REGISTRATION_TIER_LABELS[key];
+                          return (
+                            <OptionToggle
+                              key={key}
+                              checked={field.state.value === key}
+                              indicator="none"
+                              className={cn(
+                                "items-start gap-3 rounded-xl border bg-white px-4 py-3 text-sm shadow-sm transition hover:border-emerald-300",
+                                field.state.value === key
+                                  ? "border-emerald-600 ring-1 ring-emerald-500"
+                                  : "border-stone-200",
+                              )}
+                              onSelect={() => field.handleChange(key)}
+                            >
+                              <span className="block font-semibold text-stone-900">
+                                {meta.label}
+                              </span>
+                              {meta.note ? (
+                                <span className="mt-1 block text-xs font-normal text-stone-500">
+                                  {meta.note}
+                                </span>
+                              ) : null}
+                            </OptionToggle>
+                          );
+                        })}
+                      </div>
+                      <FieldFeedback
+                        meta={field.state.meta}
+                        id={registrationFeedbackId("registration_type")}
+                      />
+                    </>
+                  );
+                }}
+              </form.Field>
             </div>
 
             <div className="mt-8 flex flex-col gap-3 border-t border-stone-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
@@ -1767,7 +1923,11 @@ export function RegistrationForm({
                     after the countries catalog loads.
                   </p>
                 ) : (
-                  <p>You will securely pay via Zeffy in the next step. A confirmation email is sent after payment succeeds.</p>
+                  <p>
+                    {isAfricanCountryCode(registrationCountry)
+                      ? "You will securely pay via Paystack (card or mobile money) in the next step. A confirmation email is sent after payment succeeds."
+                      : "You will securely pay via Zeffy in the next step. A confirmation email is sent after payment succeeds."}
+                  </p>
                 )}
               </div>
               <motion.button
@@ -1787,7 +1947,7 @@ export function RegistrationForm({
                     : { scale: 0.98 }
                 }
                 transition={motionUi.micro}
-                className="inline-flex min-h-11 items-center justify-center rounded-full bg-emerald-700 px-8 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex min-h-11 w-full items-center justify-center whitespace-nowrap rounded-full bg-emerald-700 px-8 text-sm font-semibold leading-none text-white shadow-sm transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {status === "saving"
                   ? "Saving registration…"
@@ -1819,8 +1979,9 @@ export function RegistrationForm({
                       <span className="min-w-0 shrink pr-2 leading-snug">
                         Conference registration
                       </span>
-                      <SummaryUsd
+                      <SummaryRegistrationAmount
                         amount={t.registrationAmount}
+                        tier={vals.registration_type}
                         className="shrink-0 font-semibold tabular-nums"
                       />
                     </div>
@@ -1841,13 +2002,17 @@ export function RegistrationForm({
                     >
                       <span className="min-w-0 shrink">Total due</span>
                       <span className="shrink-0 text-right">
-                        <SummaryUsd amount={t.totalAmount} suffix=" USD" />
+                        <SummaryRegistrationAmount
+                          amount={t.totalAmount}
+                          tier={vals.registration_type}
+                          withCode
+                        />
                       </span>
                     </motion.div>
                   </div>
                   <p className="mt-4 text-xs leading-relaxed text-stone-500">
                     Total due is conference registration only. Registration
-                    payment is finalized on your Zeffy receipt.
+                    payment is finalized on your Paystack or Zeffy receipt.
                   </p>
                 </motion.div>
               </LayoutGroup>
@@ -1880,7 +2045,10 @@ export function RegistrationForm({
                         Total
                       </p>
                       <p className="truncate text-lg font-semibold tabular-nums tracking-tight text-emerald-900">
-                        <SummaryUsd amount={t.totalAmount} />
+                        <SummaryRegistrationAmount
+                          amount={t.totalAmount}
+                          tier={vals.registration_type}
+                        />
                       </p>
                     </>
                   )}
@@ -1915,7 +2083,7 @@ export function RegistrationForm({
                       }
                     }, 400);
                   }}
-                  className="min-h-11 shrink-0 rounded-full bg-emerald-700 px-3.5 text-sm font-semibold text-white shadow-sm transition-colors disabled:opacity-60 sm:px-5"
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-emerald-700 px-5 text-sm font-semibold leading-none text-white shadow-sm transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Register &amp; Pay
                 </motion.button>
@@ -1936,7 +2104,7 @@ function Section({
 }: {
   id: string;
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   children: ReactNode;
 }) {
   return (

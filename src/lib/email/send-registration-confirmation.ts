@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
 
 import { RegistrationConfirmationEmail } from '@/lib/email/templates/registration-confirmation-email';
-import type { RegistrationTier } from '@/lib/pricing';
+import { formatRegistrationAmount, type RegistrationTier } from '@/lib/pricing';
 import { REGISTRATION_TIER_LABELS } from '@/lib/registration-labels';
 import { normalizeEmail } from '@/lib/schemas/registration';
 
@@ -27,7 +27,9 @@ export function buildPaidRegistrationConfirmation(row: PaidRegistrationEmailRow)
   const eventTitle = row.event_title?.trim() || EVENT_TITLE;
   const totalUsd =
     typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
-  const totalPaid = Number.isFinite(totalUsd) ? `$${totalUsd.toFixed(2)} USD` : String(row.total_amount);
+  const totalPaid = Number.isFinite(totalUsd)
+    ? formatRegistrationAmount(totalUsd, row.registration_type, { withCode: true })
+    : String(row.total_amount);
   const tierLabel = REGISTRATION_TIER_LABELS[row.registration_type].label;
   const firstName = row.first_name.trim();
   const lastName = row.last_name.trim();

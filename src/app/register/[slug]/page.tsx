@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { RegisterEventPage } from "@/components/registration/register-event-page";
@@ -8,6 +9,7 @@ import {
   normalizeConferenceSlug,
 } from "@/lib/conferences";
 import { fetchCountriesCatalog } from "@/lib/countries/catalog";
+import { detectVisitorCountry } from "@/lib/visitor-location";
 
 export const dynamic = "force-dynamic";
 
@@ -42,14 +44,22 @@ export default async function RegisterSlugPage({ params }: RegisterSlugPageProps
     notFound();
   }
 
-  const [countries, conference] = await Promise.all([
+  const [countries, conference, headerStore] = await Promise.all([
     fetchCountriesCatalog(),
     fetchConferenceBySlug(slug),
+    headers(),
   ]);
 
   if (!conference) {
     notFound();
   }
 
-  return <RegisterEventPage conference={conference} countries={countries} />;
+  return (
+    <RegisterEventPage
+      conference={conference}
+      countries={countries}
+      detectedCountry={await detectVisitorCountry(headerStore)}
+      autoDetectLocation={process.env.E2E_FIXTURE_COUNTRIES !== "1"}
+    />
+  );
 }

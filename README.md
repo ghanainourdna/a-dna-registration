@@ -43,6 +43,10 @@ Copy values from your team or from Vercel project settings. Do not commit real s
 | `ZEFFY_CAMPAIGN_ID` | Ghana 2027 campaign ID fallback; narrows payment reconciliation |
 | `ZEFFY_CAMPAIGN_ID_<SLUG>` | Optional conference-specific campaign ID, e.g. `ZEFFY_CAMPAIGN_ID_USA_2026` |
 | `ZEFFY_WEBHOOK_BEARER` | Optional; `Authorization: Bearer …` for webhooks |
+| `PAYSTACK_SECRET_KEY` | Server-side Paystack secret. Required for Ghana / Africa checkout |
+| `PAYSTACK_CURRENCY` | `GHS` (default) or `USD` |
+| `PAYSTACK_USD_TO_GHS` | GHS per 1 USD when charging a USD-priced ticket in GHS (default `12`). Africa catalog tickets are already priced in cedis and are charged as-is |
+| `NEXT_PUBLIC_DEV_VISITOR_COUNTRY` | Optional two-letter ISO code (e.g. `GH` or `US`) to force visitor location locally (overrides IP / VPN) |
 | `CRON_SECRET` | Required bearer secret for Vercel's daily payment reconciliation cron |
 | `ZEFFY_SYNC_SECRET` | Optional manual-sync bearer secret when `CRON_SECRET` is unavailable |
 | `RESEND_API_KEY` | Email sending |
@@ -60,7 +64,9 @@ curl -X POST https://campaign.g-dna.org/api/cron/zeffy-payment-sync \
   -d '{"limit": 10}'
 ```
 
-**Zeffy checkout:** Set `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` to the campaign page (for Ghana 2027: [The Future of African Healthcare](https://www.zeffy.com/en-US/ticketing/the-future-of-african-healthcare-diaspora-partnerships-for-sustainable-impact)). All registration types use that one URL unless you later add optional per-tier `ZEFFY_CHECKOUT_URL_*` deep links. After Register & Pay, the attendee picks the matching ticket on Zeffy. Ticket options in the form: Diaspora Nurses/Midwives/Allied Health ($250), Diaspora Physicians ($350), Low- and Moderate-Income Nurses/Midwives/Allied Health ($150), and Reception ($150, students only).
+**Checkout routing:** If the registrant’s country is Ghana or another African country, the form offers African Students (GHS 750), Reception Dinner (GHS 1,000), African Physicians and Allied (GHS 2,000), and African Nurses and Midwives (GHS 1,500). `/api/payment/initialize` opens a Paystack checkout for the ticket’s cedi price through the Paystack API, tagged with the registration ID so the webhook and `/api/payment/verify` can confirm it. Other attendees keep the diaspora ticket list and continue to Zeffy. Point Paystack’s webhook at `/api/webhooks/paystack`. Location comes from Vercel/Cloudflare country headers in production; locally we look up this machine’s public IP (VPN-aware) and fall back to timezone.
+
+**Zeffy checkout:** Set `NEXT_PUBLIC_ZEFFY_CHECKOUT_URL` to the campaign page (for Ghana 2027: [The Future of African Healthcare](https://www.zeffy.com/en-US/ticketing/the-future-of-african-healthcare-diaspora-partnerships-for-sustainable-impact)). Attendees outside Africa see diaspora tickets (Nurses/Midwives/Allied $250, Physicians $350, LMIC $150, Reception $100 for everyone) and pay on Zeffy unless you add optional per-tier `ZEFFY_CHECKOUT_URL_*` deep links.
 
 ### Database
 

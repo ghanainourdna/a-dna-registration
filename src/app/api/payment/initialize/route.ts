@@ -1,4 +1,6 @@
+import { resolveAppBaseUrl } from '@/lib/app-url';
 import { resolveConferenceCheckoutUrl } from '@/lib/conferences';
+import { initializePaystackTransaction, shouldUsePaystackCheckout } from '@/lib/paystack';
 import { centsFromUsd, type OccupancyType, type RegistrationTier, type RoomTypeCode } from '@/lib/pricing';
 import { assertPricingMatches } from '@/lib/schemas/registration';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
@@ -14,6 +16,7 @@ type DbRow = {
   first_name: string;
   last_name: string;
   phone: string | null;
+  country: string;
   payment_status: 'pending' | 'paid' | 'failed';
   total_amount: string | number;
   registration_type: RegistrationTier;
@@ -43,14 +46,7 @@ export async function POST(req: NextRequest) {
     const envFallback = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim() ?? '';
 
     const result = await prepareCheckout(body.registrationId, supabase, envFallback);
-    let appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
-    if (!appUrl && process.env.VERCEL_URL) {
-      appUrl = `https://${process.env.VERCEL_URL}`;
-    }
-
-    const redirect = new URL(result.checkoutBaseUrl);
-    redirect.searchParams.set('registration_id', result.registrationId);
-    redirect.searchParams.set('checkout_reference', result.correlationToken.slice(0, 120));
+    const appUrl = resolveAppBaseUrl(req);
 
     const { error: refError } = await supabase
       .from('conference_registrations')
@@ -61,6 +57,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not persist checkout correlation' }, { status: 500 });
     }
 
+    if (result.provider === 'paystack') {
+      if (!appUrl) {
+        return NextResponse.json({ error: 'Missing NEXT_PUBLIC_APP_URL' }, { status: 503 });
+      }
+      const paystack = await initializePaystackTransaction({
+        email: result.email,
+        total: result.total,
+        tier: result.tier,
+        reference: result.correlationToken,
+        registrationId: result.registrationId,
+        callbackUrl: `${appUrl}/register/success?registration_id=${result.registrationId}`,
+      });
+      return NextResponse.json({
+        authorizationUrl: paystack.authorizationUrl,
+        reference: paystack.reference,
+        registrationId: result.registrationId,
+        provider: 'paystack',
+      });
+    }
+
+    const redirect = new URL(result.checkoutBaseUrl);
+    redirect.searchParams.set('registration_id', result.registrationId);
+    redirect.searchParams.set('checkout_reference', result.correlationToken.slice(0, 120));
+
     /** Documented UX: optionally keep `success_return` local for custom Zeffy redirect requests */
     if (appUrl) {
       redirect.searchParams.set('success_return_hint', `${appUrl}/register/success`);
@@ -70,14 +90,18 @@ export async function POST(req: NextRequest) {
       authorizationUrl: redirect.toString(),
       reference: result.correlationToken,
       registrationId: result.registrationId,
+      provider: result.provider,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unable to initialize payment';
+    console.error('[payment/initialize]', msg);
     const status =
       typeof msg === 'string' &&
       (msg.includes('Missing NEXT_PUBLIC_ZEFFY_CHECKOUT_URL') ||
         msg.includes('Missing NEXT_PUBLIC_SUPABASE_URL') ||
-        msg.includes('Missing SUPABASE_SERVICE_ROLE_KEY'))
+        msg.includes('Missing SUPABASE_SERVICE_ROLE_KEY') ||
+        msg.includes('Missing PAYSTACK_SECRET_KEY') ||
+        msg.includes('Missing NEXT_PUBLIC_APP_URL'))
         ? 503
         : 400;
 
@@ -93,7 +117,7 @@ async function prepareCheckout(
   const { data, error } = await supabase
     .from('conference_registrations')
     .select(
-      'id,email,first_name,last_name,phone,payment_status,total_amount,registration_type,is_student,needs_housing,room_type,occupancy_type,registration_amount,housing_amount,conference_id',
+      'id,email,first_name,last_name,phone,country,payment_status,total_amount,registration_type,is_student,needs_housing,room_type,occupancy_type,registration_amount,housing_amount,conference_id',
     )
     .eq('id', registrationId)
     .single();
@@ -120,6 +144,17 @@ async function prepareCheckout(
   }
 
   const correlationToken = `ADNA26-${registrationId}-${Date.now()}`.slice(0, 200);
+
+  if (shouldUsePaystackCheckout(row.country)) {
+    return {
+      provider: 'paystack' as const,
+      registrationId,
+      correlationToken,
+      email: row.email.trim().toLowerCase(),
+      total: totalUsd,
+      tier: row.registration_type,
+    };
+  }
 
   let campaignUrl = fallbackCampaignUrl;
   if (row.conference_id) {
@@ -150,6 +185,7 @@ async function prepareCheckout(
   const checkoutBaseUrl = resolveZeffyCheckoutBaseUrl(row, campaignUrl);
 
   return {
+    provider: 'zeffy' as const,
     registrationId,
     correlationToken,
     email: row.email.trim().toLowerCase(),

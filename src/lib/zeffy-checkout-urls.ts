@@ -52,9 +52,17 @@ const TIER_ENV_KEYS: Record<RegistrationTier, string> = {
   virtual: 'ZEFFY_CHECKOUT_URL_VIRTUAL',
   diaspora_nurses_allied_health: 'ZEFFY_CHECKOUT_URL_DIASPORA_NURSES_ALLIED_HEALTH',
   diaspora_physicians: 'ZEFFY_CHECKOUT_URL_DIASPORA_PHYSICIANS',
+  diaspora_student: 'ZEFFY_CHECKOUT_URL_DIASPORA_STUDENT',
   low_moderate_income_nurses_allied_health:
     'ZEFFY_CHECKOUT_URL_LOW_MODERATE_INCOME_NURSES_ALLIED_HEALTH',
+  low_moderate_income_nurses_allied_health_student:
+    'ZEFFY_CHECKOUT_URL_LOW_MODERATE_INCOME_NURSES_ALLIED_HEALTH_STUDENT',
+  low_moderate_income_physician: 'ZEFFY_CHECKOUT_URL_LOW_MODERATE_INCOME_PHYSICIAN',
   reception: 'ZEFFY_CHECKOUT_URL_RECEPTION',
+  african_students: 'ZEFFY_CHECKOUT_URL_AFRICAN_STUDENTS',
+  reception_dinner: 'ZEFFY_CHECKOUT_URL_RECEPTION_DINNER',
+  african_physicians_allied: 'ZEFFY_CHECKOUT_URL_AFRICAN_PHYSICIANS_ALLIED',
+  african_nurses_midwives: 'ZEFFY_CHECKOUT_URL_AFRICAN_NURSES_MIDWIVES',
 };
 
 export function zeffyCheckoutUrlForTier(tier: RegistrationTier): string | undefined {

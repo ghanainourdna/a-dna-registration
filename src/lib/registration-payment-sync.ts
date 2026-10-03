@@ -1,5 +1,6 @@
 import { sendPaidRegistrationConfirmationIfNeeded } from '@/lib/email/send-registration-confirmation';
 import { resolveConferenceZeffyCampaignId } from '@/lib/conferences';
+import { AFRICAN_COUNTRIES } from '@/lib/countries/africa';
 import {
   finalizeRegistrationPaymentForRow,
   REGISTRATION_PAYMENT_ROW_SELECT_PENDING,
@@ -180,6 +181,9 @@ export async function listPendingRegistrationsForPaymentSync(
     .select(REGISTRATION_PAYMENT_ROW_SELECT_PENDING)
     .eq('payment_status', 'pending')
     .or(`payment_sync_checked_at.is.null,payment_sync_checked_at.lt.${staleBefore}`)
+    .or(
+      `country.is.null,country.not.in.(${AFRICAN_COUNTRIES.map((country) => country.code).join(',')})`,
+    )
     .order('payment_sync_checked_at', { ascending: true, nullsFirst: true })
     .order('created_at', { ascending: false })
     .limit(limit);

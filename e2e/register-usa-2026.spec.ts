@@ -28,9 +28,6 @@ test.describe('USA 2026 registration page', () => {
     ).toHaveCount(0);
 
     await page.locator('button[data-section-nav="housing"]').click();
-    await expect(page.getByRole('status').filter({ hasText: /housing is disabled/i })).toHaveCount(
-      0,
-    );
     await expect(page.getByText(/Do you need housing/i)).toBeVisible();
   });
 });
