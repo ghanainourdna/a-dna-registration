@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { isAfricanCountryCode } from '@/lib/countries/africa';
-import { centsFromUsd } from '@/lib/pricing';
+import { centsFromUsd, registrationPriceCurrency, type RegistrationTier } from '@/lib/pricing';
 
 const PAYSTACK_API_BASE = 'https://api.paystack.co';
 const DEFAULT_USD_TO_GHS = 12;
@@ -11,7 +11,8 @@ export type PaystackCurrency = 'GHS' | 'USD';
 export type PaystackCharge = {
   currency: PaystackCurrency;
   amountMinor: number;
-  amountUsdCents: number;
+  /** Null when the ticket is priced in cedis. */
+  amountUsdCents: number | null;
   usdToGhs: number | null;
 };
 
@@ -53,12 +54,30 @@ export function resolveUsdToGhsRate(): number {
   return rate;
 }
 
-export function resolvePaystackCharge(totalUsd: number): PaystackCharge {
-  const amountUsdCents = centsFromUsd(totalUsd);
-  if (!Number.isFinite(totalUsd) || totalUsd <= 0 || amountUsdCents <= 0) {
+/** `total` is in the tier's own currency: cedis for the Africa catalog, USD otherwise. */
+/** Paystack allows alphanumeric, `-`, `.`, `=`, and `_` in references. */
+export function sanitizePaystackReference(reference: string): string {
+  const cleaned = reference
+    .trim()
+    .replace(/[^a-zA-Z0-9\-._=]/g, '')
+    .slice(0, 100);
+  if (!cleaned) {
+    throw new Error('Invalid Paystack reference.');
+  }
+  return cleaned;
+}
+
+export function resolvePaystackCharge(total: number, tier: RegistrationTier): PaystackCharge {
+  const totalMinor = centsFromUsd(total);
+  if (!Number.isFinite(total) || total <= 0 || totalMinor <= 0) {
     throw new Error('Invalid total amount.');
   }
 
+  if (registrationPriceCurrency(tier) === 'GHS') {
+    return { currency: 'GHS', amountMinor: totalMinor, amountUsdCents: null, usdToGhs: null };
+  }
+
+  const amountUsdCents = totalMinor;
   const currency = resolvePaystackCurrency();
   if (currency === 'USD') {
     return { currency, amountMinor: amountUsdCents, amountUsdCents, usdToGhs: null };
@@ -67,7 +86,7 @@ export function resolvePaystackCharge(totalUsd: number): PaystackCharge {
   const usdToGhs = resolveUsdToGhsRate();
   return {
     currency,
-    amountMinor: Math.round(totalUsd * usdToGhs * 100),
+    amountMinor: Math.round(total * usdToGhs * 100),
     amountUsdCents,
     usdToGhs,
   };
@@ -113,23 +132,23 @@ async function paystackFetchJson(path: string, init?: RequestInit): Promise<unkn
 
 export async function initializePaystackTransaction(opts: {
   email: string;
-  totalUsd: number;
+  total: number;
+  tier: RegistrationTier;
   reference: string;
   registrationId: string;
   callbackUrl: string;
 }): Promise<{ authorizationUrl: string; reference: string }> {
-  const charge = resolvePaystackCharge(opts.totalUsd);
-  const json = (await paystackFetchJson('/transaction/initialize', {
-    method: 'POST',
-    body: JSON.stringify({
-      email: opts.email,
-      amount: charge.amountMinor,
-      currency: charge.currency,
-      reference: opts.reference,
-      callback_url: opts.callbackUrl,
-      metadata: {
+  const charge = resolvePaystackCharge(opts.total, opts.tier);
+  const body: Record<string, unknown> = {
+    email: opts.email,
+    amount: charge.amountMinor,
+    currency: charge.currency,
+    reference: sanitizePaystackReference(opts.reference),
+    callback_url: opts.callbackUrl,
+    metadata: {
         registration_id: opts.registrationId,
-        amount_usd_cents: charge.amountUsdCents,
+        registration_type: opts.tier,
+        ...(charge.amountUsdCents != null ? { amount_usd_cents: charge.amountUsdCents } : {}),
         custom_fields: [
           {
             display_name: 'Registration',
@@ -138,7 +157,14 @@ export async function initializePaystackTransaction(opts: {
           },
         ],
       },
-    }),
+  };
+  if (charge.currency === 'GHS') {
+    body.channels = ['card', 'mobile_money', 'bank'];
+  }
+
+  const json = (await paystackFetchJson('/transaction/initialize', {
+    method: 'POST',
+    body: JSON.stringify(body),
   })) as {
     status?: boolean;
     data?: { authorization_url?: string; reference?: string };

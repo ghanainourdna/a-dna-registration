@@ -1,5 +1,5 @@
+import { resolveAppBaseUrl } from '@/lib/app-url';
 import { resolveConferenceCheckoutUrl } from '@/lib/conferences';
-import { resolvePaystackCheckoutBaseUrl } from '@/lib/paystack-checkout-urls';
 import { initializePaystackTransaction, shouldUsePaystackCheckout } from '@/lib/paystack';
 import { centsFromUsd, type OccupancyType, type RegistrationTier, type RoomTypeCode } from '@/lib/pricing';
 import { assertPricingMatches } from '@/lib/schemas/registration';
@@ -46,10 +46,7 @@ export async function POST(req: NextRequest) {
     const envFallback = process.env.NEXT_PUBLIC_ZEFFY_CHECKOUT_URL?.trim() ?? '';
 
     const result = await prepareCheckout(body.registrationId, supabase, envFallback);
-    let appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '');
-    if (!appUrl && process.env.VERCEL_URL) {
-      appUrl = `https://${process.env.VERCEL_URL}`;
-    }
+    const appUrl = resolveAppBaseUrl(req);
 
     const { error: refError } = await supabase
       .from('conference_registrations')
@@ -60,13 +57,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not persist checkout correlation' }, { status: 500 });
     }
 
-    if (result.provider === 'paystack' && !result.checkoutBaseUrl) {
+    if (result.provider === 'paystack') {
       if (!appUrl) {
         return NextResponse.json({ error: 'Missing NEXT_PUBLIC_APP_URL' }, { status: 503 });
       }
       const paystack = await initializePaystackTransaction({
         email: result.email,
-        totalUsd: result.totalUsd,
+        total: result.total,
+        tier: result.tier,
         reference: result.correlationToken,
         registrationId: result.registrationId,
         callbackUrl: `${appUrl}/register/success?registration_id=${result.registrationId}`,
@@ -96,6 +94,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unable to initialize payment';
+    console.error('[payment/initialize]', msg);
     const status =
       typeof msg === 'string' &&
       (msg.includes('Missing NEXT_PUBLIC_ZEFFY_CHECKOUT_URL') ||
@@ -152,8 +151,8 @@ async function prepareCheckout(
       registrationId,
       correlationToken,
       email: row.email.trim().toLowerCase(),
-      totalUsd,
-      checkoutBaseUrl: resolvePaystackCheckoutBaseUrl(row) ?? '',
+      total: totalUsd,
+      tier: row.registration_type,
     };
   }
 

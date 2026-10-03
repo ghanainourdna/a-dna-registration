@@ -69,8 +69,13 @@ async function saveRegistration(values: RegistrationFormValues, conferenceSlug?:
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
     supabase = getSupabaseAdmin();
-  } catch {
-    throw new Error('Registration service is unavailable. Missing Supabase environment variables.');
+  } catch (e: unknown) {
+    const detail = e instanceof Error ? e.message : '';
+    throw new Error(
+      detail.startsWith('Missing NEXT_PUBLIC_SUPABASE_URL')
+        ? `Registration service is unavailable. ${detail}`
+        : 'Registration service is unavailable. Missing Supabase environment variables.',
+    );
   }
 
   const { data: countryRow } = await supabase.from('countries').select('code').eq('code', values.country).maybeSingle();

@@ -42,7 +42,7 @@ describe('resolvePaystackCharge', () => {
     delete process.env.PAYSTACK_CURRENCY;
     delete process.env.PAYSTACK_USD_TO_GHS;
     expect(resolvePaystackCurrency()).toBe('GHS');
-    expect(resolvePaystackCharge(250)).toEqual({
+    expect(resolvePaystackCharge(250, 'diaspora_nurses_allied_health')).toEqual({
       currency: 'GHS',
       amountMinor: 300_000,
       amountUsdCents: 25_000,
@@ -52,7 +52,7 @@ describe('resolvePaystackCharge', () => {
 
   it('can charge USD cents when PAYSTACK_CURRENCY=USD', () => {
     process.env.PAYSTACK_CURRENCY = 'USD';
-    expect(resolvePaystackCharge(150)).toEqual({
+    expect(resolvePaystackCharge(150, 'low_moderate_income_nurses_allied_health')).toEqual({
       currency: 'USD',
       amountMinor: 15_000,
       amountUsdCents: 15_000,
@@ -62,9 +62,23 @@ describe('resolvePaystackCharge', () => {
 
   it('matches a verified Paystack amount', () => {
     delete process.env.PAYSTACK_CURRENCY;
-    const charge = resolvePaystackCharge(250);
+    const charge = resolvePaystackCharge(250, 'diaspora_nurses_allied_health');
     expect(paystackChargeMatches(charge, { amountMinor: 300_000, currency: 'GHS' })).toBe(true);
     expect(paystackChargeMatches(charge, { amountMinor: 25_000, currency: 'USD' })).toBe(false);
+  });
+
+  it('charges Africa catalog tickets in cedis without applying the USD rate', () => {
+    process.env.PAYSTACK_CURRENCY = 'USD';
+    process.env.PAYSTACK_USD_TO_GHS = '15';
+    const charge = resolvePaystackCharge(1500, 'african_nurses_midwives');
+    expect(charge).toEqual({
+      currency: 'GHS',
+      amountMinor: 150_000,
+      amountUsdCents: null,
+      usdToGhs: null,
+    });
+    expect(paystackChargeMatches(charge, { amountMinor: 150_000, currency: 'GHS' })).toBe(true);
+    expect(paystackChargeMatches(charge, { amountMinor: 1_800_000, currency: 'GHS' })).toBe(false);
   });
 });
 

@@ -239,7 +239,7 @@ export async function finalizeRegistrationPaymentForRow(
   };
 }
 
-function totalUsdForRow(row: RegistrationPaymentRow): number {
+function totalForRow(row: RegistrationPaymentRow): number {
   return typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
 }
 
@@ -261,15 +261,15 @@ export async function finalizePaystackRegistrationPayment(
     return { outcome: 'rejected', reason: 'pricing_mismatch' };
   }
 
-  const totalUsd = totalUsdForRow(row);
-  if (!Number.isFinite(totalUsd)) {
+  const total = totalForRow(row);
+  if (!Number.isFinite(total)) {
     await supabase.from('conference_registrations').update({ payment_status: 'failed' }).eq('id', row.id);
     return { outcome: 'rejected', reason: 'invalid_total' };
   }
 
   let charge;
   try {
-    charge = resolvePaystackCharge(totalUsd);
+    charge = resolvePaystackCharge(total, row.registration_type);
   } catch {
     return { outcome: 'rejected', reason: 'invalid_total' };
   }
@@ -287,7 +287,7 @@ export async function finalizePaystackRegistrationPayment(
     event: 'charge.success',
     reference: verified.reference,
     registration_id: row.id,
-    amount_cents: charge.amountUsdCents,
+    amount_cents: charge.amountMinor,
     currency: verified.currency.toUpperCase(),
     status: verified.status,
     channel: verified.channel,
@@ -305,7 +305,7 @@ export async function finalizePaystackRegistrationPayment(
     external_payment_id: String(verified.id),
     event_type: 'charge.success',
     registration_id: row.id,
-    amount_cents: charge.amountUsdCents,
+    amount_cents: charge.amountMinor,
     currency: verified.currency.toUpperCase(),
     status: 'succeeded',
     payload: verified.payload,

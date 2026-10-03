@@ -80,7 +80,7 @@ export function RegisterEventPage({
             fill
             priority
             sizes="(max-width: 768px) 100vw, 100vw"
-            className="object-cover max-md:object-[center_40%_20%] md:object-[center_center] md:scale-[0.93]"
+            className="object-cover max-md:object-[center_40%] md:object-center md:scale-[0.93]"
           />
           <div
             className="absolute inset-0 bg-linear-to-b from-black/75 via-black/52 to-emerald-950/50 md:bg-linear-to-r md:from-black/82 md:via-black/48 md:to-emerald-900/42"

@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { isAfricanCountryCode } from '@/lib/countries/africa';
-import {
-  PAYSTACK_SHOP_URLS,
-  resolvePaystackCheckoutBaseUrl,
-} from '@/lib/paystack-checkout-urls';
-import { shouldUsePaystackCheckout } from '@/lib/paystack';
+import { resolvePaystackCharge, shouldUsePaystackCheckout } from '@/lib/paystack';
 import {
   AFRICA_REGISTRATION_TIERS,
+  REGISTRATION_PRICES_USD,
   defaultRegistrationTierForAttendee,
   registrationTiersForAttendee,
   registrationTiersForConference,
@@ -60,45 +57,13 @@ describe('Ghana checkout routing', () => {
     );
   });
 
-  it('maps each Ghana ticket to its Paystack Shop page', () => {
-    expect(
-      resolvePaystackCheckoutBaseUrl({
-        is_student: false,
-        registration_type: 'diaspora_nurses_allied_health',
-      }),
-    ).toBe(PAYSTACK_SHOP_URLS.africanNursesMidwives);
-    expect(
-      resolvePaystackCheckoutBaseUrl({
-        is_student: false,
-        registration_type: 'diaspora_physicians',
-      }),
-    ).toBe(PAYSTACK_SHOP_URLS.africanPhysiciansAlliedHealth);
-    expect(
-      resolvePaystackCheckoutBaseUrl({
-        is_student: false,
-        registration_type: 'low_moderate_income_nurses_allied_health',
-      }),
-    ).toBe(PAYSTACK_SHOP_URLS.africanStudents);
-    expect(
-      resolvePaystackCheckoutBaseUrl({
-        is_student: false,
-        registration_type: 'reception',
-      }),
-    ).toBe(PAYSTACK_SHOP_URLS.receptionDinner);
-  });
-
-  it('sends a Ghana student to the African Students shop unless they chose reception', () => {
-    expect(
-      resolvePaystackCheckoutBaseUrl({
-        is_student: true,
-        registration_type: defaultRegistrationTierForAttendee('ghana-2027', true, 'GH'),
-      }),
-    ).toBe(PAYSTACK_SHOP_URLS.africanStudents);
-    expect(
-      resolvePaystackCheckoutBaseUrl({
-        is_student: true,
-        registration_type: 'reception',
-      }),
-    ).toBe(PAYSTACK_SHOP_URLS.receptionDinner);
+  it.each(AFRICA_REGISTRATION_TIERS)('charges %s at its cedi price', (tier) => {
+    const price = REGISTRATION_PRICES_USD[tier];
+    expect(resolvePaystackCharge(price, tier)).toEqual({
+      currency: 'GHS',
+      amountMinor: price * 100,
+      amountUsdCents: null,
+      usdToGhs: null,
+    });
   });
 });
