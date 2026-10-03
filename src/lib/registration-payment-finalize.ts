@@ -64,12 +64,15 @@ export async function fetchRegistrationPaymentRowForFinalize(
   supabase: SupabaseClient,
   id: string,
 ): Promise<RegistrationPaymentRow | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('conference_registrations')
     .select(REGISTRATION_PAYMENT_ROW_SELECT_PENDING)
     .eq('id', id)
     .maybeSingle();
 
+  if (error) {
+    throw new Error(`Database lookup failed: ${error.message}`);
+  }
   return (data as RegistrationPaymentRow | null) ?? null;
 }
 
@@ -82,12 +85,15 @@ export async function findRegistrationByCorrelationToken(
 ): Promise<RegistrationPaymentRow | null> {
   const t = token.trim();
   if (!t) return null;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('conference_registrations')
     .select(REGISTRATION_PAYMENT_ROW_SELECT_PENDING)
     .eq('checkout_correlation_reference', t)
     .maybeSingle();
 
+  if (error) {
+    throw new Error(`Database lookup failed: ${error.message}`);
+  }
   return (data as RegistrationPaymentRow | null) ?? null;
 }
 
@@ -256,14 +262,26 @@ export async function finalizePaystackRegistrationPayment(
     }
   | { outcome: 'db_error'; message: string }
 > {
+  if (row.payment_status === 'paid') {
+    return { outcome: 'already_paid', registrationId: row.id };
+  }
+
   if (!assertPricingMatches(row)) {
-    await supabase.from('conference_registrations').update({ payment_status: 'failed' }).eq('id', row.id);
+    await supabase
+      .from('conference_registrations')
+      .update({ payment_status: 'failed' })
+      .eq('id', row.id)
+      .eq('payment_status', 'pending');
     return { outcome: 'rejected', reason: 'pricing_mismatch' };
   }
 
   const total = totalForRow(row);
   if (!Number.isFinite(total)) {
-    await supabase.from('conference_registrations').update({ payment_status: 'failed' }).eq('id', row.id);
+    await supabase
+      .from('conference_registrations')
+      .update({ payment_status: 'failed' })
+      .eq('id', row.id)
+      .eq('payment_status', 'pending');
     return { outcome: 'rejected', reason: 'invalid_total' };
   }
 
@@ -276,10 +294,6 @@ export async function finalizePaystackRegistrationPayment(
 
   if (!paystackChargeMatches(charge, verified) || verified.status !== 'success') {
     return { outcome: 'rejected', reason: 'amount_mismatch' };
-  }
-
-  if (row.payment_status === 'paid') {
-    return { outcome: 'already_paid', registrationId: row.id };
   }
 
   const { error: txnError } = await supabase.from('paystack_transactions').insert({
@@ -331,7 +345,22 @@ export async function finalizePaystackRegistrationPayment(
     return { outcome: 'db_error', message: updateError.message };
   }
   if (!updated) {
-    return { outcome: 'already_paid', registrationId: row.id };
+    const { data: current, error: reloadError } = await supabase
+      .from('conference_registrations')
+      .select('payment_status')
+      .eq('id', row.id)
+      .maybeSingle();
+
+    if (reloadError) {
+      return { outcome: 'db_error', message: reloadError.message };
+    }
+    if (current?.payment_status === 'paid') {
+      return { outcome: 'already_paid', registrationId: row.id };
+    }
+    return {
+      outcome: 'db_error',
+      message: `Registration payment status changed to ${String(current?.payment_status ?? 'missing')} before finalization.`,
+    };
   }
   return { outcome: 'paid', registrationId: row.id };
 }
