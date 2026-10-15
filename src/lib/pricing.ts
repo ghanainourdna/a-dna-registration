@@ -1,4 +1,5 @@
 import { isAfricanCountryCode } from '@/lib/countries/africa';
+import { sortRegistrationTiersByWeight } from '@/lib/registration-labels';
 
 export const HOUSING_NIGHTS = 3;
 export const HOUSING_DATES_LABEL = 'August 20–22, 2026';
@@ -19,7 +20,7 @@ export const REGISTRATION_PRICES_USD = {
   // Ghana 2027
   diaspora_nurses_allied_health: 250,
   diaspora_physicians: 350,
-  diaspora_student: 200,
+  diaspora_student: 175,
   low_moderate_income_nurses_allied_health: 150,
   low_moderate_income_nurses_allied_health_student: 75,
   low_moderate_income_physician: 250,
@@ -81,8 +82,8 @@ export const CONFERENCE_REGISTRATION_CONFIG: Record<string, ConferenceRegistrati
     tiersWhenNotStudent: [
       'diaspora_nurses_allied_health',
       'diaspora_physicians',
-      'low_moderate_income_nurses_allied_health',
-      'low_moderate_income_physician',
+        'low_moderate_income_nurses_allied_health',
+        'low_moderate_income_physician',
       'reception',
     ],
     tiersWhenStudent: [
@@ -136,7 +137,9 @@ export function registrationTiersForConference(
   isStudent: boolean,
 ): RegistrationTier[] {
   const config = getConferenceRegistrationConfig(conferenceSlug);
-  return [...(isStudent ? config.tiersWhenStudent : config.tiersWhenNotStudent)];
+  return sortRegistrationTiersByWeight([
+    ...(isStudent ? config.tiersWhenStudent : config.tiersWhenNotStudent),
+  ]);
 }
 
 export function usesAfricaRegistrationCatalog(
@@ -154,7 +157,7 @@ export function registrationTiersForAttendee(
   country?: string | null,
 ): RegistrationTier[] {
   if (usesAfricaRegistrationCatalog(conferenceSlug, country)) {
-    return [...AFRICA_REGISTRATION_TIERS];
+    return sortRegistrationTiersByWeight([...AFRICA_REGISTRATION_TIERS]);
   }
   return registrationTiersForConference(conferenceSlug, isStudent);
 }

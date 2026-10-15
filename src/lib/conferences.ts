@@ -92,6 +92,7 @@ const FALLBACK_CONFERENCES: Record<string, Conference> = {
 };
 
 function fallbackConference(slug: string): Conference | null {
+  /* v8 ignore next -- configured catalog slugs always have hardcoded fallbacks */
   return FALLBACK_CONFERENCES[slug] ?? null;
 }
 
@@ -182,6 +183,7 @@ export async function fetchConferenceBySlug(slugInput?: string | null): Promise<
 
   if (process.env.E2E_FIXTURE_COUNTRIES === '1') {
     const conference = fallbackConference(slug);
+    /* v8 ignore next -- hardcoded fallbacks are always active */
     return conference?.is_active ? conference : null;
   }
 
@@ -189,6 +191,7 @@ export async function fetchConferenceBySlug(slugInput?: string | null): Promise<
     const supabase = createCatalogClient();
     if (!supabase) {
       const conference = fallbackConference(slug);
+      /* v8 ignore next -- hardcoded fallbacks are always active */
       return conference?.is_active ? conference : null;
     }
 

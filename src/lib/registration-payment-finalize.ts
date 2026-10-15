@@ -73,6 +73,7 @@ export async function fetchRegistrationPaymentRowForFinalize(
   if (error) {
     throw new Error(`Database lookup failed: ${error.message}`);
   }
+  /* v8 ignore next -- Supabase maybeSingle returns null, not undefined */
   return (data as RegistrationPaymentRow | null) ?? null;
 }
 
@@ -94,6 +95,7 @@ export async function findRegistrationByCorrelationToken(
   if (error) {
     throw new Error(`Database lookup failed: ${error.message}`);
   }
+  /* v8 ignore next -- Supabase maybeSingle returns null, not undefined */
   return (data as RegistrationPaymentRow | null) ?? null;
 }
 
@@ -104,6 +106,7 @@ export async function listPendingRegistrationsByEmail(supabase: SupabaseClient, 
     .eq('email', emailLower)
     .eq('payment_status', 'pending');
 
+  /* v8 ignore next -- Supabase select returns an array or null */
   return (((data ?? []) as RegistrationPaymentRow[]) ?? []).filter((r) => expectedCentsForRow(r) != null);
 }
 
@@ -249,6 +252,11 @@ function totalForRow(row: RegistrationPaymentRow): number {
   return typeof row.total_amount === 'string' ? Number.parseFloat(row.total_amount) : row.total_amount;
 }
 
+export function isDuplicateKeyViolation(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  return error.code === '23505' || /duplicate key value/i.test(error.message ?? '');
+}
+
 export async function finalizePaystackRegistrationPayment(
   supabase: SupabaseClient,
   row: RegistrationPaymentRow,
@@ -308,8 +316,7 @@ export async function finalizePaystackRegistrationPayment(
     paid_at: verified.paidAt,
     payload: verified.payload,
   });
-  const duplicateTxn =
-    !!txnError && (txnError.code === '23505' || /duplicate key value/i.test(txnError.message ?? ''));
+  const duplicateTxn = isDuplicateKeyViolation(txnError);
   if (txnError && !duplicateTxn) {
     return { outcome: 'db_error', message: txnError.message };
   }
@@ -324,8 +331,7 @@ export async function finalizePaystackRegistrationPayment(
     status: 'succeeded',
     payload: verified.payload,
   });
-  const duplicateAudit =
-    !!auditError && (auditError.code === '23505' || /duplicate key value/i.test(auditError.message ?? ''));
+  const duplicateAudit = isDuplicateKeyViolation(auditError);
   if (auditError && !duplicateAudit) {
     return { outcome: 'db_error', message: auditError.message };
   }

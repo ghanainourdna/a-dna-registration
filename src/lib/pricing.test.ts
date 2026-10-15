@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  centsFromUsd,
   defaultRegistrationTierForAttendee,
   defaultRegistrationTierForConference,
+  formatRegistrationAmount,
+  housingAmountUsd,
   getConferenceRegistrationConfig,
+  totalAmountUsd,
   hasConferenceRegistrationConfig,
   isRegistrationTierAllowedForConference,
   registrationTiersForAttendee,
   registrationTiersForConference,
+  usesAfricaRegistrationCatalog,
+  usdFromCents,
 } from '@/lib/pricing';
 
 describe('conference registration tiers', () => {
@@ -28,10 +34,10 @@ describe('conference registration tiers', () => {
 
   it('uses the Africa catalog only for Ghana and African countries', () => {
     expect(registrationTiersForAttendee('ghana-2027', false, 'GH')).toEqual([
-      'african_students',
-      'reception_dinner',
-      'african_physicians_allied',
       'african_nurses_midwives',
+      'african_students',
+      'african_physicians_allied',
+      'reception_dinner',
     ]);
     expect(isRegistrationTierAllowedForConference('ghana-2027', 'african_students', false, 'KE')).toBe(
       true,
@@ -76,5 +82,47 @@ describe('conference registration tiers', () => {
     expect(() => getConferenceRegistrationConfig('new-event')).toThrow(
       /pricing is not configured/i,
     );
+  });
+
+  it('defaults the Africa catalog slug when conference slug is omitted', () => {
+    expect(usesAfricaRegistrationCatalog(undefined, 'GH')).toBe(true);
+    expect(usesAfricaRegistrationCatalog('  ghana-2027  ', 'GH')).toBe(true);
+    expect(usesAfricaRegistrationCatalog('usa-2026', 'GH')).toBe(false);
+  });
+
+  it('formats Ghana catalog amounts in cedis', () => {
+    expect(formatRegistrationAmount(1500, 'african_nurses_midwives')).toBe('GHS 1,500.00');
+    expect(formatRegistrationAmount(200, 'conference_only', { withCode: true })).toBe('$200.00 USD');
+    expect(formatRegistrationAmount(200, 'conference_only')).toBe('$200.00');
+  });
+
+  it('prices single-occupancy housing separately from shared', () => {
+    expect(housingAmountUsd({ roomType: 'A', occupancy: 'single' })).toBeGreaterThan(
+      housingAmountUsd({ roomType: 'A', occupancy: 'shared' }),
+    );
+    expect(
+      totalAmountUsd({
+        registrationTier: 'conference_only',
+        needsHousing: true,
+        roomType: 'A',
+        occupancy: 'single',
+      }).housingAmount,
+    ).toBe(housingAmountUsd({ roomType: 'A', occupancy: 'single' }));
+  });
+
+  it('treats blank conference slugs as ghana-2027 for config lookup', () => {
+    expect(hasConferenceRegistrationConfig(null)).toBe(true);
+    expect(getConferenceRegistrationConfig(undefined).defaultTier).toBe('diaspora_nurses_allied_health');
+  });
+
+  it('defaults attendee tiers from country when Ghana uses the Africa catalog', () => {
+    expect(defaultRegistrationTierForAttendee('ghana-2027', false, 'GH')).toBe('african_nurses_midwives');
+    expect(defaultRegistrationTierForAttendee('ghana-2027', true, 'GH')).toBe('african_students');
+    expect(defaultRegistrationTierForAttendee('usa-2026', false, 'US')).toBe('conference_only');
+  });
+
+  it('converts between USD major units and cents', () => {
+    expect(centsFromUsd(250.005)).toBe(25_001);
+    expect(usdFromCents(25_000)).toBe(250);
   });
 });
