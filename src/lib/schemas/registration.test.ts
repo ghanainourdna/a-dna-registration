@@ -144,7 +144,7 @@ describe('registrationFormSchema', () => {
 
   it('prices the Zeffy diaspora tickets', () => {
     const cases = [
-      ['diaspora_student', true, 200],
+      ['diaspora_student', true, 175],
       ['low_moderate_income_nurses_allied_health_student', true, 75],
       ['low_moderate_income_physician', false, 250],
       ['reception', false, 100],

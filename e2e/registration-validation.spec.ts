@@ -97,11 +97,11 @@ test.describe('Registration validation interactions', () => {
     ).toBeVisible();
     await expect(
       tiers.getByRole('radio', {
-        name: /\$150 - Low- and Moderate-Income Nurses/i,
+        name: /\$150 - Low- and Middle-Income Nurses/i,
       }),
     ).toBeVisible();
     await expect(
-      tiers.getByRole('radio', { name: /Low- and Moderate-Income Physician/i }),
+      tiers.getByRole('radio', { name: /\$250 - LMI Physician/i }),
     ).toBeVisible();
     await expect(tiers.getByRole('radio', { name: /Reception/i })).toBeVisible();
     await expect(tiers.getByRole('radio', { name: /Student/i })).toHaveCount(0);
@@ -122,13 +122,13 @@ test.describe('Registration validation interactions', () => {
     ).toBeVisible();
     await expect(
       tiers.getByRole('radio', {
-        name: /\$150 - Low- and Moderate-Income Nurses/i,
+        name: /\$150 - Low- and Middle-Income Nurses/i,
       }),
     ).toBeVisible();
-    await expect(tiers.getByRole('radio', { name: /\$200 - Diaspora Student/i })).toBeVisible();
+    await expect(tiers.getByRole('radio', { name: /\$175 - Diaspora Student/i })).toBeVisible();
     await expect(
       tiers.getByRole('radio', {
-        name: /\$75 - Low- and Moderate-Income Nurses, Midwives and Allied Health Student/i,
+        name: /\$75 - LMI Nurses, Midwives and Allied Health Student/i,
       }),
     ).toBeVisible();
     await expect(tiers.getByRole('radio', { name: /Reception/i })).toBeVisible();

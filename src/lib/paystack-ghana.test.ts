@@ -19,10 +19,16 @@ describe('Ghana checkout routing', () => {
 
   it('shows the Africa Paystack catalog for Ghana and other African countries', () => {
     expect(registrationTiersForAttendee('ghana-2027', false, 'GH')).toEqual([
-      ...AFRICA_REGISTRATION_TIERS,
+      'african_nurses_midwives',
+      'african_students',
+      'african_physicians_allied',
+      'reception_dinner',
     ]);
     expect(registrationTiersForAttendee('ghana-2027', true, 'NG')).toEqual([
-      ...AFRICA_REGISTRATION_TIERS,
+      'african_nurses_midwives',
+      'african_students',
+      'african_physicians_allied',
+      'reception_dinner',
     ]);
     expect(defaultRegistrationTierForAttendee('ghana-2027', false, 'GH')).toBe(
       'african_nurses_midwives',

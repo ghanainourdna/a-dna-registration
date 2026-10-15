@@ -28,10 +28,10 @@ describe('conference registration tiers', () => {
 
   it('uses the Africa catalog only for Ghana and African countries', () => {
     expect(registrationTiersForAttendee('ghana-2027', false, 'GH')).toEqual([
-      'african_students',
-      'reception_dinner',
-      'african_physicians_allied',
       'african_nurses_midwives',
+      'african_students',
+      'african_physicians_allied',
+      'reception_dinner',
     ]);
     expect(isRegistrationTierAllowedForConference('ghana-2027', 'african_students', false, 'KE')).toBe(
       true,
