@@ -4,6 +4,6 @@
  */
 
 export const REGISTER_PAGE_IMAGES = {
-  hero: '/assets/adna-conference-2026-applause.jpg',
+  hero: '/assets/adna-conference-2026-celebration.jpg',
   spotlight: '/assets/adna-conference-2026-13.jpg',
 } as const;
