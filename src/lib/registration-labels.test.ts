@@ -21,6 +21,13 @@ describe('sortRegistrationTiersByWeight', () => {
     ]);
   });
 
+  it('breaks ties alphabetically when weights match', () => {
+    expect(sortRegistrationTiersByWeight(['conference_only', 'student_conference'])).toEqual([
+      'conference_only',
+      'student_conference',
+    ]);
+  });
+
   it('orders the Africa Paystack catalog', () => {
     expect(
       sortRegistrationTiersByWeight([

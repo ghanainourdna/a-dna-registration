@@ -67,6 +67,7 @@ const TIER_ENV_KEYS: Record<RegistrationTier, string> = {
 
 export function zeffyCheckoutUrlForTier(tier: RegistrationTier): string | undefined {
   const key = TIER_ENV_KEYS[tier];
+  /* v8 ignore next -- tier keys are exhaustive for RegistrationTier */
   const raw = key ? process.env[key]?.trim() : undefined;
   return raw || undefined;
 }

@@ -1,17 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const resendSend = vi.fn();
+
+vi.mock('resend', () => ({
+  Resend: class {
+    emails = { send: resendSend };
+  },
+}));
+
 import {
   buildPaidRegistrationConfirmation,
   canClaimConfirmationEmail,
   CONFIRMATION_EMAIL_CLAIM_LEASE_MS,
   deliverPaidRegistrationConfirmationWithClaim,
+  EVENT_TITLE,
   paidRegistrationEmailSubject,
+  sendPaidRegistrationConfirmationEmail,
   sendPaidRegistrationConfirmationIfNeeded,
   type PaidRegistrationEmailRow,
 } from '@/lib/email/send-registration-confirmation';
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  resendSend.mockReset();
 });
 
 const PAID_ROW: PaidRegistrationEmailRow = {
@@ -140,6 +151,59 @@ describe('paid registration confirmation email', () => {
     expect(content.text).toContain(content.detailsUrl);
   });
 
+  it('sends through Resend when configured', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test_key');
+    vi.stubEnv('EMAIL_FROM', 'A-DNA <from@example.com>');
+    vi.stubEnv('EMAIL_REPLY_TO', 'reply@example.com');
+    vi.stubEnv('NODE_ENV', 'development');
+    resendSend.mockResolvedValue({ data: { id: 'email_1' }, error: null });
+
+    await expect(sendPaidRegistrationConfirmationEmail(PAID_ROW)).resolves.toBe(true);
+    expect(resendSend).toHaveBeenCalledOnce();
+  });
+
+  it('returns false when Resend rejects the message', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test_key');
+    resendSend.mockResolvedValue({
+      data: null,
+      error: { message: 'blocked', name: 'validation_error' },
+    });
+    await expect(sendPaidRegistrationConfirmationEmail(PAID_ROW)).resolves.toBe(false);
+  });
+
+  it('returns false when Resend throws', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test_key');
+    resendSend.mockRejectedValue(new Error('network down'));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(sendPaidRegistrationConfirmationEmail(PAID_ROW)).resolves.toBe(false);
+    errorLog.mockRestore();
+  });
+
+  it('skips send in development when the API key is missing', async () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(sendPaidRegistrationConfirmationEmail(PAID_ROW)).resolves.toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('skips send quietly in production when the API key is missing', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('RESEND_API_KEY', '');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(sendPaidRegistrationConfirmationEmail(PAID_ROW)).resolves.toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('logs non-Error send failures', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test_key');
+    resendSend.mockRejectedValue('offline');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(sendPaidRegistrationConfirmationEmail(PAID_ROW)).resolves.toBe(false);
+    errorLog.mockRestore();
+  });
+
   it('does not claim a send when RESEND_API_KEY is unset', async () => {
     vi.stubEnv('RESEND_API_KEY', '');
     const from = vi.fn();
@@ -241,6 +305,32 @@ describe('deliverPaidRegistrationConfirmationWithClaim', () => {
     expect(store.row.confirmation_email_claim_token).toBeNull();
   });
 
+  it('logs when clearing the claim fails after a send failure', async () => {
+    const clock = { now: new Date('2026-08-13T23:00:00.000Z') };
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'paid',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      },
+      clock,
+    );
+    const rpc = async (name: string, args: Record<string, unknown>) => {
+      if (name === 'clear_registration_confirmation_email_claim') {
+        return { data: false, error: { message: 'clear failed' } };
+      }
+      return store.rpc(name, args);
+    };
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      deliverPaidRegistrationConfirmationWithClaim({ rpc, from: store.from } as never, PAID_ROW.id, async () => false),
+    ).resolves.toBe(false);
+    expect(errorLog).toHaveBeenCalled();
+    errorLog.mockRestore();
+  });
+
   it('releases the claim when send fails so a later caller can retry immediately', async () => {
     const clock = { now: new Date('2026-08-13T23:00:00.000Z') };
     const store = createMemoryConfirmationEmailStore(
@@ -332,5 +422,245 @@ describe('deliverPaidRegistrationConfirmationWithClaim', () => {
 
     expect(send).toHaveBeenCalledOnce();
     expect(store.row.confirmation_email_sent_at).toBeTruthy();
+  });
+
+  it('loads the conference title before sending', async () => {
+    const clock = { now: new Date('2026-08-13T23:00:00.000Z') };
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'paid',
+        conference_id: 'conf-1',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      } as StoreRow & { conference_id: string },
+      clock,
+    );
+    const send = vi.fn(async (row: PaidRegistrationEmailRow) => {
+      expect(row.event_title).toBe('Custom Conference Title');
+      return true;
+    });
+    const supabase = {
+      rpc: store.rpc,
+      from: (table: string) => {
+        if (table === 'conferences') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { title: ' Custom Conference Title ' }, error: null }),
+              }),
+            }),
+          };
+        }
+        return store.from();
+      },
+    };
+
+    await expect(
+      deliverPaidRegistrationConfirmationWithClaim(supabase as never, PAID_ROW.id, send),
+    ).resolves.toBe(true);
+  });
+
+  it('clears the claim when the paid row cannot be loaded', async () => {
+    const clock = { now: new Date('2026-08-13T23:00:00.000Z') };
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'paid',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      },
+      clock,
+    );
+    const supabase = {
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        if (name === 'clear_registration_confirmation_email_claim') {
+          return { data: false, error: { message: 'clear failed after load' } };
+        }
+        return store.rpc(name, args);
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: { message: 'load failed' } }),
+          }),
+        }),
+      }),
+    };
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      deliverPaidRegistrationConfirmationWithClaim(supabase as never, PAID_ROW.id, async () => true),
+    ).resolves.toBe(false);
+    errorLog.mockRestore();
+  });
+
+  it('logs clear-claim failures when the paid row cannot be loaded', async () => {
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'paid',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      },
+      { now: new Date('2026-08-13T23:00:00.000Z') },
+    );
+    const supabase = {
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        if (name === 'clear_registration_confirmation_email_claim') {
+          return { data: false, error: { message: 'clear failed' } };
+        }
+        return store.rpc(name, args);
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
+        }),
+      }),
+    };
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      deliverPaidRegistrationConfirmationWithClaim(supabase as never, PAID_ROW.id, async () => true),
+    ).resolves.toBe(false);
+    errorLog.mockRestore();
+  });
+
+  it('uses the default event title when the conference title is blank', async () => {
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'paid',
+        conference_id: 'conf-1',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      },
+      { now: new Date('2026-08-13T23:00:00.000Z') },
+    );
+    const send = vi.fn(async () => true);
+    const supabase = {
+      rpc: store.rpc.bind(store),
+      from: (table: string) => {
+        if (table === 'conferences') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { title: '   ' }, error: null }),
+              }),
+            }),
+          };
+        }
+        return store.from();
+      },
+    };
+    await deliverPaidRegistrationConfirmationWithClaim(supabase as never, PAID_ROW.id, send);
+    expect(send.mock.calls[0]?.[0]?.event_title).toBe(EVENT_TITLE);
+  });
+
+  it('clears the claim without logging when clear succeeds after a missing row', async () => {
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'paid',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      },
+      { now: new Date('2026-08-13T23:00:00.000Z') },
+    );
+    const supabase = {
+      rpc: store.rpc.bind(store),
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
+        }),
+      }),
+    };
+    await expect(
+      deliverPaidRegistrationConfirmationWithClaim(supabase as never, PAID_ROW.id, async () => true),
+    ).resolves.toBe(false);
+  });
+
+  it('clears the claim when the registration is not paid', async () => {
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'pending',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      },
+      { now: new Date('2026-08-13T23:00:00.000Z') },
+    );
+    await expect(
+      deliverPaidRegistrationConfirmationWithClaim(store as never, PAID_ROW.id, async () => true),
+    ).resolves.toBe(false);
+  });
+
+  it('logs and aborts when claim or mark RPC calls fail', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const supabase = {
+      rpc: async (name: string) => {
+        if (name === 'claim_registration_confirmation_email_send') {
+          return { data: null, error: { message: 'claim failed' } };
+        }
+        return { data: null, error: null };
+      },
+      from: vi.fn(),
+    };
+    await expect(
+      deliverPaidRegistrationConfirmationWithClaim(supabase as never, PAID_ROW.id),
+    ).resolves.toBe(false);
+
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'paid',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      },
+      { now: new Date('2026-08-13T23:00:00.000Z') },
+    );
+    const failingMark = {
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        if (name === 'mark_registration_confirmation_email_sent') {
+          return { data: false, error: { message: 'mark failed' } };
+        }
+        return store.rpc(name, args);
+      },
+      from: store.from,
+    };
+    await expect(
+      deliverPaidRegistrationConfirmationWithClaim(failingMark as never, PAID_ROW.id, async () => true),
+    ).resolves.toBe(false);
+    errorLog.mockRestore();
+  });
+});
+
+describe('sendPaidRegistrationConfirmationIfNeeded', () => {
+  it('delegates to the claim flow when Resend is configured', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_test_key');
+    resendSend.mockResolvedValue({ data: { id: 'email_1' }, error: null });
+    const store = createMemoryConfirmationEmailStore(
+      {
+        ...PAID_ROW,
+        payment_status: 'paid',
+        confirmation_email_sent_at: null,
+        confirmation_email_claimed_at: null,
+        confirmation_email_claim_token: null,
+      },
+      { now: new Date('2026-08-13T23:00:00.000Z') },
+    );
+    await expect(
+      sendPaidRegistrationConfirmationIfNeeded(store as never, PAID_ROW.id),
+    ).resolves.toBe(true);
+    expect(resendSend).toHaveBeenCalledOnce();
   });
 });

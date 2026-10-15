@@ -69,7 +69,7 @@ export const REGISTRATION_TIER_LABELS: Record<RegistrationTier, RegistrationTier
     label: 'GHS 750 - African Students',
     price: 750,
     weight: 18,
-    note: 'First degree student members · 3-day conference',
+    note: 'Enrolled in a first degree program',
   },
   reception_dinner: {
     label: 'GHS 1,000 - Reception Dinner',
