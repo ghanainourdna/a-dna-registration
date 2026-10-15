@@ -25,7 +25,12 @@ export const metadata: Metadata = {
   description:
     "African-Diaspora Nursing Alliance - The Future Of African HealthCare · Diaspora Partnership for sustainable Impact.",
   icons: {
-    icon: "/favicon.ico",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/assets/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/assets/favicon-16.png", sizes: "16x16", type: "image/png" },
+    ],
+    apple: "/assets/apple-touch-icon.png",
   },
 };
 
