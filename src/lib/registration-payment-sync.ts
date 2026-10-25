@@ -291,33 +291,45 @@ export async function syncPendingRegistrationPaymentsFromZeffy(
     }
   });
 
-  const confirmationRows = await listPaidRegistrationsNeedingConfirmation(
-    supabase,
-    CONFIRMATION_RETRY_LIMIT,
-  );
-  summary.confirmationRetriesChecked = confirmationRows.length;
-  await mapWithConcurrency(
-    confirmationRows,
-    PAYMENT_SYNC_CONCURRENCY,
-    async ({ id }) => {
-      try {
-        if (await deps.sendConfirmation(supabase, id)) {
-          summary.confirmationRetriesSent += 1;
-        } else {
-          summary.confirmationRetriesFailed += 1;
+  try {
+    const confirmationRows = await listPaidRegistrationsNeedingConfirmation(
+      supabase,
+      CONFIRMATION_RETRY_LIMIT,
+    );
+    summary.confirmationRetriesChecked = confirmationRows.length;
+    await mapWithConcurrency(
+      confirmationRows,
+      PAYMENT_SYNC_CONCURRENCY,
+      async ({ id }) => {
+        try {
+          if (await deps.sendConfirmation(supabase, id)) {
+            summary.confirmationRetriesSent += 1;
+          } else {
+            summary.confirmationRetriesFailed += 1;
+            summary.errors.push({
+              registrationId: id,
+              message: 'Confirmation email was not sent.',
+            });
+          }
+        } catch (error) {
           summary.errors.push({
             registrationId: id,
-            message: 'Confirmation email was not sent.',
+            message: error instanceof Error ? error.message : 'Confirmation retry failed',
           });
         }
-      } catch (error) {
-        summary.errors.push({
-          registrationId: id,
-          message: error instanceof Error ? error.message : 'Confirmation retry failed',
-        });
-      }
-    },
-  );
+      },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Confirmation retry query failed';
+    if (!/confirmation_email_sent_at/i.test(message)) {
+      throw error;
+    }
+    summary.errors.push({
+      registrationId: 'confirmation-retry',
+      message:
+        'Confirmation email columns are missing in Supabase; run supabase/apply-payment-schema-gap.sql.',
+    });
+  }
 
   return summary;
 }

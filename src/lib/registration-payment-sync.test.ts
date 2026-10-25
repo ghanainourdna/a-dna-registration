@@ -588,6 +588,122 @@ describe('syncPendingRegistrationPaymentsFromZeffy', () => {
     expect(summary.confirmationRetriesChecked).toBe(0);
   });
 
+  it('continues when confirmation retry columns are missing in Supabase', async () => {
+    const supabase = {
+      from: () => ({
+        select: (columns: string) => {
+          if (columns === 'id') {
+            return {
+              eq: () => ({
+                is: () => ({
+                  order: () => ({
+                    limit: async () => ({
+                      data: null,
+                      error: {
+                        message: 'column conference_registrations.confirmation_email_sent_at does not exist',
+                      },
+                    }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return {
+            eq: () => ({
+              or: () => ({
+                or: () => {
+                  const ordered = { order: () => ordered, limit: async () => ({ data: [], error: null }) };
+                  return ordered;
+                },
+              }),
+            }),
+          };
+        },
+        update: () => ({ in: async () => ({ error: null }) }),
+      }),
+    };
+
+    const summary = await syncPendingRegistrationPaymentsFromZeffy(supabase as never, {}, {
+      matchPayment: vi.fn(),
+      finalize: vi.fn(),
+      sendConfirmation: vi.fn(),
+      resolvePaymentScope: vi.fn(),
+    });
+    expect(summary.errors[0]?.message).toMatch(/apply-payment-schema-gap/i);
+  });
+
+  it('rethrows unexpected confirmation retry query errors', async () => {
+    const supabase = {
+      from: () => ({
+        select: (columns: string) => {
+          if (columns === 'id') {
+            return {
+              eq: () => ({
+                is: () => ({
+                  order: () => ({
+                    limit: async () => ({ data: null, error: { message: 'connection reset' } }),
+                  }),
+                }),
+              }),
+            };
+          }
+          return {
+            eq: () => ({
+              or: () => ({
+                or: () => {
+                  const ordered = { order: () => ordered, limit: async () => ({ data: [], error: null }) };
+                  return ordered;
+                },
+              }),
+            }),
+          };
+        },
+        update: () => ({ in: async () => ({ error: null }) }),
+      }),
+    };
+
+    await expect(
+      syncPendingRegistrationPaymentsFromZeffy(supabase as never, {}, {
+        matchPayment: vi.fn(),
+        finalize: vi.fn(),
+        sendConfirmation: vi.fn(),
+        resolvePaymentScope: vi.fn(),
+      }),
+    ).rejects.toThrow(/connection reset/);
+  });
+
+  it('rethrows non-Error confirmation retry failures', async () => {
+    const supabase = {
+      from: () => ({
+        select: (columns: string) => {
+          if (columns === 'id') {
+            throw 'confirmation-query-boom';
+          }
+          return {
+            eq: () => ({
+              or: () => ({
+                or: () => {
+                  const ordered = { order: () => ordered, limit: async () => ({ data: [], error: null }) };
+                  return ordered;
+                },
+              }),
+            }),
+          };
+        },
+        update: () => ({ in: async () => ({ error: null }) }),
+      }),
+    };
+
+    await expect(
+      syncPendingRegistrationPaymentsFromZeffy(supabase as never, {}, {
+        matchPayment: vi.fn(),
+        finalize: vi.fn(),
+        sendConfirmation: vi.fn(),
+        resolvePaymentScope: vi.fn(),
+      }),
+    ).rejects.toBe('confirmation-query-boom');
+  });
+
   it('counts rejected rows and sync exceptions', async () => {
     const rejected = pendingRow({ id: 'rej-1' });
     const supabase = {

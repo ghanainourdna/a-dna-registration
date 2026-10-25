@@ -72,6 +72,12 @@ curl -X POST https://campaign.g-dna.org/api/cron/zeffy-payment-sync \
 
 SQL migrations live in `supabase/migrations/`. Apply them to your Supabase project (SQL editor or CLI) so public reads (e.g. countries) match the app.
 
+If production is missing Paystack tables, confirmation-email columns, or `finalize_zeffy_registration_payment`, run the idempotent patch:
+
+1. Supabase → **Settings → Database** → copy the **database password** (not the service role JWT).
+2. Add `SUPABASE_DB_PASSWORD=…` to `.env.local` (never commit).
+3. Run `pnpm db:apply-payment-schema` (runs `supabase/apply-payment-schema-gap.sql`), or paste that file into the Supabase **SQL Editor** and execute.
+
 Set `conferences.zeffy_campaign_id` for every active conference. Reconciliation also applies a
 registration-time lower bound and atomically claims each Zeffy payment ID, preventing an older or
 already-consumed payment from confirming another registration.
@@ -89,6 +95,7 @@ Registrations live in `conference_registrations` and belong to a row in `confere
 | `pnpm test:e2e` | Playwright tests (starts Next on port **3333** with fixture countries) |
 | `pnpm test:e2e:ui` | Playwright UI mode |
 | `pnpm test:e2e:headed` | Playwright headed browsers |
+| `pnpm db:apply-payment-schema` | Apply payment/confirmation SQL patch to linked Supabase Postgres |
 
 Main registration UI: **`/register`**.
 

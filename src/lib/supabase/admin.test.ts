@@ -14,6 +14,8 @@ describe('getSupabaseAdmin', () => {
   });
 
   it('throws when Supabase env is missing', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '');
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');
     const { getSupabaseAdmin } = await import('@/lib/supabase/admin');
     await expect(getSupabaseAdmin).toThrow(/Missing NEXT_PUBLIC_SUPABASE_URL/);
   });
