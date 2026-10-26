@@ -52,8 +52,21 @@ Copy values from your team or from Vercel project settings. Do not commit real s
 | `RESEND_API_KEY` | Email sending |
 | `EMAIL_FROM` | Resend “from” address |
 | `EMAIL_REPLY_TO` | Reply-to for transactional mail |
+| `NEXT_PUBLIC_SENTRY_DSN` | Sentry project DSN (client + server). SDK stays off until this is set |
+| `SENTRY_AUTH_TOKEN` | Build-time only (Vercel): upload source maps. Create under Sentry → Settings → Auth Tokens |
+| `SENTRY_PROJECT` | Sentry project slug (must match the project that owns the DSN) |
+| `SENTRY_ORG` | Optional; defaults to `african-diaspora-nursing-allia` |
 
 On Vercel, `VERCEL_URL` is set automatically; `NEXT_PUBLIC_APP_URL` should match your production domain in settings.
+
+### Sentry
+
+1. In [Sentry](https://sentry.io), create a **Next.js** project under org **african-diaspora-nursing-allia** and copy the **DSN** into `NEXT_PUBLIC_SENTRY_DSN` (local `.env.local` and Vercel Production).
+2. Create an auth token with `project:releases` and `org:read`, add `SENTRY_AUTH_TOKEN` and `SENTRY_PROJECT` on Vercel so production builds upload source maps.
+3. Run the app, open `/sentry-example-page`, click **Throw sample error**, then enter onboarding **run code** `c30a8abe4c` in Sentry when prompted.
+4. Optional: connect the [Sentry Vercel integration](https://vercel.com/integrations/sentry) to sync env vars automatically.
+
+Session Replay is intentionally not enabled (registration forms collect PII). Server/API routes and cron paths are instrumented when the DSN is present.
 
 **Zeffy payment sync:** Webhooks mark a registration `paid` when Zeffy posts `payment.completed`. If that is missed, `/register/success` polls `/api/payment/verify`, and a daily Vercel Cron at `/api/cron/zeffy-payment-sync` walks pending rows, retries unsent confirmation emails, matches succeeded Zeffy payments by conference campaign + registration time + email + amount, and updates `payment_status`. Set `CRON_SECRET` (and `ZEFFY_API_KEY`) in Vercel. Manual run:
 

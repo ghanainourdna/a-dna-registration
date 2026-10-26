@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
 
 const configDir = path.dirname(fileURLToPath(import.meta.url));
@@ -26,4 +27,12 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG ?? "african-diaspora-nursing-allia",
+  project: process.env.SENTRY_PROJECT,
+
+  silent: !process.env.CI,
+
+  widenClientFileUpload: true,
+  tunnelRoute: "/monitoring",
+});
