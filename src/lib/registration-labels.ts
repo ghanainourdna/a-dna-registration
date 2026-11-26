@@ -27,43 +27,36 @@ export const REGISTRATION_TIER_LABELS: Record<RegistrationTier, RegistrationTier
     label: '$250 - Diaspora Nurses, Midwives and Allied Health',
     price: 250,
     weight: 12,
-    note: 'Available until Nov 1',
   },
   diaspora_physicians: {
     label: '$350 - Diaspora Physicians',
     price: 350,
     weight: 10,
-    note: 'Available until Nov 1',
   },
   diaspora_student: {
     label: '$175 - Diaspora Student',
     price: 175,
     weight: 8,
-    note: 'Available until Nov 1',
   },
   low_moderate_income_nurses_allied_health: {
     label: '$150 - Low- and Middle-Income Nurses, Midwives and Allied Health',
     price: 150,
     weight: 6,
-    note: 'Available until Nov 1',
   },
   low_moderate_income_nurses_allied_health_student: {
     label: '$75 - LMI Nurses, Midwives and Allied Health Student',
     price: 75,
     weight: 4,
-    note: 'Available until Nov 1',
   },
   low_moderate_income_physician: {
     label: '$250 - LMI Physician',
     price: 250,
     weight: 2,
-    note: 'Available until Nov 1',
   },
   reception: {
     label: '$100 - Reception',
     price: 100,
     weight: 0,
-    note: 'Available until Nov 1',
   },
   african_students: {
     label: 'GHS 750 - African Students',
